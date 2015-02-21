@@ -1,0 +1,20 @@
+{
+    "authors": [
+        {
+            "name": "Bjoern Lange",
+            "email": "github@b3nl.de"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Illuminate\\": "src/Illuminate/"
+        }
+    },
+    "description": "Converts an MySQL Workbench model to laravel counterparts.",
+    "license": "MIT",
+    "minimum-stability": "dev",
+    "name": "b3nl/laravel-mwb-model",
+    "require": {
+        "php": ">= 5.2.0"
+    }
+}
