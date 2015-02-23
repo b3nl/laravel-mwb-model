@@ -51,22 +51,39 @@
 				throw new \InvalidArgumentException('Could not extract the model.');
 			} // if
 
-			$fieldSkips = array('created_at', 'id', 'updated_at');
-
-			$typeMap = array(
-				'com.mysql.rdbms.mysql.datatype.bigint'   => 'bigInteger',
-				'com.mysql.rdbms.mysql.datatype.datetime' => 'dateTime',
-				'com.mysql.rdbms.mysql.datatype.int'      => 'integer',
-				'com.mysql.rdbms.mysql.datatype.text'     => 'text',
-				'com.mysql.rdbms.mysql.datatype.tinyint'  => 'tinyInteger',
-				'com.mysql.rdbms.mysql.datatype.varchar'  => 'string'
-			);
+			$fieldSkips = ['created_at', 'id', 'updated_at'];
+			$typeEvals = [
+				'bigInteger' => [
+					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.bigint"]',
+					'./value[@type="int" and @key="precision"]'
+				],
+				'dateTime' => [
+					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.datetime"]'
+				],
+				'integer' => [
+					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.int"]',
+					'./value[@type="int" and @key="precision"]'
+				],
+				'text' => [
+					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.text"]'
+				],
+				'tinyInteger' => [
+					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.tinyint"]',
+					'./value[@type="int" and @key="precision"]'
+				],
+				'string' => [
+					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.varchar"]',
+					'./value[@type="int" and @key="length"]'
+				]
+			];
 
 			foreach (glob($dir . '*.mwb.xml') as $file) {
 				$reader = new \XMLReader();
 				$reader->open($file);
 
 				while ($reader->read()) {
+					// TODO Version Check.
+
 					if (($reader->nodeType === \XMLReader::ELEMENT) && $reader->hasAttributes &&
 							($reader->getAttribute('struct-name') === 'db.mysql.Table'))
 					{
@@ -79,8 +96,8 @@
 
 						if ($tableNames && $tableNames->length) {
 							/** @var \DOMElement $name */
-							foreach ($tableNames as $tableName) {
-								$this->call('make:model', ['name' => $tableName->nodeValue]);
+							foreach ($tableNames as $tableNameObject) {
+								$this->call('make:model', ['name' => $tableName = $tableNameObject->nodeValue]);
 							} // foreach
 
 							$fields = $path->query(
@@ -88,21 +105,58 @@
 							);
 
 							if (count($fields)) {
-								$fieldNames      = array();
+								$fieldNames      = [];
 								$fieldMigrations = '';
 
 								/** @var \DOMElement $name */
 								foreach ($fields as $field) {
-									$fieldName = $path->query('./value[@key="name"]', $field)->item(0)->nodeValue;
+									$fieldNames[] = $fieldName = $path->query('./value[@key="name"]', $field)->item(0)->nodeValue;
+									$method       = '';
 
-									if (!in_array($fieldName, $fieldSkips)) {
-										$fieldNames[]     = $fieldName;
-										$fieldMigrations .= "\$table->{$typeMap[$path->query('./link[@key="simpleType"]', $field)->item(0)->nodeValue]}('{$fieldName}');\n";
+									if (in_array($fieldName, $fieldSkips)) {
+										continue;
 									} // if
+
+									foreach ($typeEvals as $ruleMethod => $rules) {
+										$evaledXPath = $path->evaluate(array_shift($rules), $field);
+
+										// is it a found domnodelist or evaled the xpath to a scalar value !== false.
+										if ((($evaledXPath instanceof \DOMNodeList) && ($evaledXPath->length)) ||
+											((!($evaledXPath instanceof \DOMNodeList)) && $evaledXPath))
+										{
+											$method = $ruleMethod;
+											break;
+										} // if
+									} // foreach
+
+									if (!$method) {
+										$this->info(sprintf(
+											'Field %s of table %s could not be found. Fallback used.',
+											$fieldName,
+											$tableName
+										));
+
+										$method = 'string';
+										$rules  = array();
+									} // if
+
+									$fieldMigrations .= "\$table->{$method}('{$fieldName}'";
+
+									if ($rules) {
+										foreach ($rules as $paramPath) {
+											$pathResult = $path->query($paramPath, $field);
+
+											if ($pathResult && $pathResult->length) {
+												$fieldMigrations .= ', ' . var_export($pathResult->item(0)->nodeValue, true);
+											} // if
+										} // foreach
+									} // if
+
+									$fieldMigrations .= ");\n";
 								} // foreach
 
 								$migrationFiles = glob(
-									$this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$tableName->nodeValue}_table.php"
+									$this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$tableName}_table.php"
 								);
 
 								if ($migrationFiles) {
@@ -117,22 +171,22 @@
 								} // if
 
 								try {
-									$reflection = new \ReflectionClass('\\' . $this->getAppNamespace() . $tableName->nodeValue);
+									$reflection = new \ReflectionClass('\\' . $this->getAppNamespace() . $tableName);
 
 									file_put_contents(
 										$modelFile  = $reflection->getFileName(),
 										str_replace(
 											"\t//",
 											str_replace(
-												array('{{fillable}}', '{{table}}'),
-												array(var_export($fieldNames, true), $tableName->nodeValue),
+												['{{fillable}}', '{{table}}'],
+												[var_export($fieldNames, true), $tableName],
 												file_get_contents(realpath(__DIR__ . '/../stubs/model-content.stub'))
 											),
 											file_get_contents($modelFile)
 										)
 									);
 								} catch (\ReflectionException $exc) {
-									throw new \LogicException(sprintf('Model for table %s not found', $tableName->nodeValue));
+									throw new \LogicException(sprintf('Model for table %s not found', $tableName));
 								} // catch
 							} // if
 						} // if
