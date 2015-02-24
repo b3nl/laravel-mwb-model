@@ -1,9 +1,12 @@
 <?php namespace b3nl\MWBModel\Console\Commands;
 
-	use Illuminate\Console\AppNamespaceDetectorTrait;
-	use Illuminate\Database\Console\Migrations\BaseCommand;
-	use Symfony\Component\Console\Input\InputOption;
-	use Symfony\Component\Console\Input\InputArgument;
+	use b3nl\MWBModel\MWBModelReader,
+		b3nl\MWBModel\Models\MigrationField,
+		b3nl\MWBModel\Models\ModelContent,
+		Illuminate\Console\AppNamespaceDetectorTrait,
+		Illuminate\Database\Console\Migrations\BaseCommand,
+		Symfony\Component\Console\Input\InputArgument,
+		Symfony\Component\Console\Input\InputOption;
 
 	/**
 	 * Console Command to convert a mwb modul to migrations and models.
@@ -29,170 +32,67 @@
 		protected $description = 'Creates basic laravel migrations and models for the given MySQL Workbench model.';
 
 		/**
-		 * Execute the console command.
-		 *
-		 * @return mixed
+		 * Fields which should be skipped by default.
+		 * @var array
 		 */
-		public function fire()
+		protected $skippedFields = ['created_at', 'id', 'updated_at'];
+
+		/**
+		 * Checks and extract the model file. If the file can be found and extracted, the extracted path will be returned.
+		 * @return string
+		 */
+		protected function checkAndExtractModelFile()
 		{
-			if (!is_readable($file = $this->argument('MWB-Model'))) {
+			if (!is_readable($file = $this->argument('modelfile')))
+			{
 				throw new \InvalidArgumentException('Could not find the model.');
 			} // if
 
 			$archive = new \ZipArchive();
 
-			if (!$archive->open(realpath($file))) {
+			if (!$archive->open(realpath($file)))
+			{
 				throw new \InvalidArgumentException('Could not open the model.');
 			} // if
 
 			$dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid() . DIRECTORY_SEPARATOR;
 
-			if (!$archive->extractTo($dir)) {
+			if (!$archive->extractTo($dir))
+			{
 				throw new \InvalidArgumentException('Could not extract the model.');
 			} // if
 
-			$fieldSkips = ['created_at', 'id', 'updated_at'];
-			$typeEvals = [
-				'bigInteger' => [
-					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.bigint"]',
-					'./value[@type="int" and @key="precision"]'
-				],
-				'dateTime' => [
-					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.datetime"]'
-				],
-				'integer' => [
-					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.int"]',
-					'./value[@type="int" and @key="precision"]'
-				],
-				'text' => [
-					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.text"]'
-				],
-				'tinyInteger' => [
-					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.tinyint"]',
-					'./value[@type="int" and @key="precision"]'
-				],
-				'string' => [
-					'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.varchar"]',
-					'./value[@type="int" and @key="length"]'
-				]
-			];
+			return $dir;
+		} // function
 
-			foreach (glob($dir . '*.mwb.xml') as $file) {
-				$reader = new \XMLReader();
+		/**
+		 * Opens the zipped model container and reads the xml model file.
+		 * @return void
+		 */
+		public function fire()
+		{
+			$dir = $this->checkAndExtractModelFile();
+
+			foreach (glob($dir . '*.mwb.xml') as $file)
+			{
+				$reader = new MWBModelReader();
 				$reader->open($file);
 
-				while ($reader->read()) {
-					// TODO Version Check.
+				if (!$reader->isCompatibleVersion())
+				{
+					throw new \InvalidArgumentException('Wrong model version.');
+				} // if
 
-					if (($reader->nodeType === \XMLReader::ELEMENT) && $reader->hasAttributes &&
-							($reader->getAttribute('struct-name') === 'db.mysql.Table'))
+				while ($reader->read())
+				{
+					if ($reader->isModelTable())
 					{
-						$dom = new \DOMDocument('1.0');
-						$dom->importNode($node = $reader->expand(), true);
-						$dom->appendChild($node);
-
-						$path = new \DOMXPath($dom);
-						$tableNames = $path->query('(./value[@key="name"])[1]');
-
-						if ($tableNames && $tableNames->length) {
-							/** @var \DOMElement $name */
-							foreach ($tableNames as $tableNameObject) {
-								$this->call('make:model', ['name' => $tableName = $tableNameObject->nodeValue]);
-							} // foreach
-
-							$fields = $path->query(
-								'./value[@type="list" and @key="columns"]/value[@type="object" and @struct-name="db.mysql.Column"]'
-							);
-
-							if (count($fields)) {
-								$fieldNames      = [];
-								$fieldMigrations = '';
-
-								/** @var \DOMElement $name */
-								foreach ($fields as $field) {
-									$fieldNames[] = $fieldName = $path->query('./value[@key="name"]', $field)->item(0)->nodeValue;
-									$method       = '';
-
-									if (in_array($fieldName, $fieldSkips)) {
-										continue;
-									} // if
-
-									foreach ($typeEvals as $ruleMethod => $rules) {
-										$evaledXPath = $path->evaluate(array_shift($rules), $field);
-
-										// is it a found domnodelist or evaled the xpath to a scalar value !== false.
-										if ((($evaledXPath instanceof \DOMNodeList) && ($evaledXPath->length)) ||
-											((!($evaledXPath instanceof \DOMNodeList)) && $evaledXPath))
-										{
-											$method = $ruleMethod;
-											break;
-										} // if
-									} // foreach
-
-									if (!$method) {
-										$this->info(sprintf(
-											'Field %s of table %s could not be found. Fallback used.',
-											$fieldName,
-											$tableName
-										));
-
-										$method = 'string';
-										$rules  = array();
-									} // if
-
-									$fieldMigrations .= "\$table->{$method}('{$fieldName}'";
-
-									if ($rules) {
-										foreach ($rules as $paramPath) {
-											$pathResult = $path->query($paramPath, $field);
-
-											if ($pathResult && $pathResult->length) {
-												$fieldMigrations .= ', ' . var_export($pathResult->item(0)->nodeValue, true);
-											} // if
-										} // foreach
-									} // if
-
-									$fieldMigrations .= ");\n";
-								} // foreach
-
-								$migrationFiles = glob(
-									$this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$tableName}_table.php"
-								);
-
-								if ($migrationFiles) {
-									file_put_contents(
-										$migrationFile = end($migrationFiles),
-										str_replace(
-											$search = "\$table->increments('id');\n",
-											$search . $fieldMigrations,
-											file_get_contents($migrationFile)
-										)
-									);
-								} // if
-
-								try {
-									$reflection = new \ReflectionClass('\\' . $this->getAppNamespace() . $tableName);
-
-									file_put_contents(
-										$modelFile  = $reflection->getFileName(),
-										str_replace(
-											"\t//",
-											str_replace(
-												['{{fillable}}', '{{table}}'],
-												[var_export($fieldNames, true), $tableName],
-												file_get_contents(realpath(__DIR__ . '/../stubs/model-content.stub'))
-											),
-											file_get_contents($modelFile)
-										)
-									);
-								} catch (\ReflectionException $exc) {
-									throw new \LogicException(sprintf('Model for table %s not found', $tableName));
-								} // catch
-							} // if
-						} // if
+						$this->handleModelTable($reader->expand());
 					} // if
 				} // while
 			} // foreach
+
+			return null;
 		} // function
 
 		/**
@@ -202,13 +102,32 @@
 		protected function getArguments()
 		{
 			return [
-				['MWB-Model', InputArgument::REQUIRED, 'The file path to your *.mwb-file.'],
+				['modelfile', InputArgument::REQUIRED, 'The file path to your *.mwb-file.'],
 			];
+		} // function
+
+		protected function getMigrationFields(\DOMNodeList $fields, \DOMXPath $rootPath)
+		{
+			$fieldObjects = [];
+
+			/** @var \DOMElement $name */
+			foreach ($fields as $field)
+			{
+				$fieldName = $rootPath->query('./value[@key="name"]', $field)->item(0)->nodeValue;
+
+				if (in_array($fieldName, $this->skippedFields))
+				{
+					continue;
+				} // if
+
+				$fieldObjects[$fieldName] = (new MigrationField($fieldName))->load($field, $rootPath);
+			} // foreach
+
+			return $fieldObjects;
 		} // function
 
 		/**
 		 * Get the console command options.
-		 *
 		 * @return array
 		 */
 		protected function getOptions()
@@ -216,5 +135,56 @@
 			return [
 				['example', null, InputOption::VALUE_OPTIONAL, 'An example option.', null],
 			];
+		} // function
+
+		/**
+		 * Generates the model and migration for/with laravel and extends the contents of the generated classes.
+		 * @param \DOMNode $node The node of the table.
+		 * @return MakeMWBModel
+		 */
+		protected function handleModelTable(\DOMNode $node)
+		{
+			$dom = new \DOMDocument('1.0');
+			$dom->importNode($node, true);
+			$dom->appendChild($node);
+
+			$path = new \DOMXPath($dom);
+			$tableNames = $path->query('(./value[@key="name"])[1]');
+
+			if ($tableNames && $tableNames->length)
+			{
+				$this->call('make:model', ['name' => $tableName = $tableNames->item(0)->nodeValue]);
+
+				$fields = $path->query(
+					'./value[@type="list" and @key="columns"]/value[@type="object" and @struct-name="db.mysql.Column"]'
+				);
+
+				if ($fields && $fields->length && $fieldObjects = $this->getMigrationFields($fields, $path))
+				{
+					// TODO Move this saving to a class.
+					$migrationFiles = glob(
+						$this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$tableName}_table.php"
+					);
+
+					if ($migrationFiles)
+					{
+						file_put_contents(
+							$migrationFile = end($migrationFiles),
+							str_replace(
+								$search = "\$table->increments('id');\n",
+								$search . implode("\n", $fieldObjects) . "\n",
+								file_get_contents($migrationFile)
+							)
+						);
+					} // if
+
+					(new ModelContent('\\' . $this->getAppNamespace() . $tableName))
+						->setFillable(array_keys($fieldObjects))
+						->setTable($tableName)
+						->save();
+				} // if
+			} // if
+
+			return $this;
 		} // function
 	} // class
