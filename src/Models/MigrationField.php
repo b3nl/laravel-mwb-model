@@ -8,6 +8,12 @@
 	 */
 	class MigrationField {
 		/**
+		 * The id of the field in the model.
+		 * @var string
+		 */
+		protected $id = '';
+
+		/**
 		 * The found migration calls.
 		 * @var array
 		 */
@@ -141,6 +147,15 @@
 			} // if
 
 			return $fieldMigration . ";";
+		}
+
+		/**
+		 * Returns the id of this field in the model.
+		 * @return string
+		 */
+		public function getId()
+		{
+			return $this->id;
 		} // function
 
 		/**
@@ -160,6 +175,8 @@
 		 */
 		public function load(\DOMNode $field, \DOMXPath $rootPath)
 		{
+			$this->setId($field->attributes->getNamedItem('id')->nodeValue);
+
 			return $this
 				->loadMigrationCalls($field, $rootPath, $this->typeEvals)
 				->loadMigrationCalls($field, $rootPath, $this->optionEvals, true);
@@ -220,6 +237,18 @@
 
 				call_user_func_array([$this, $method], $params);
 			} // if
+
+			return $this;
+		} // function
+
+		/**
+		 * Sets the id of this field.
+		 * @param string $id
+		 * @return MigrationField
+		 */
+		public function setId($id)
+		{
+			$this->id = $id;
 
 			return $this;
 		} // function

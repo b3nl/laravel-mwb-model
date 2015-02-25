@@ -38,6 +38,12 @@
 		protected $skippedFields = ['created_at', 'id', 'updated_at'];
 
 		/**
+		 * Saving of the table names and their ids.
+		 * @var array
+		 */
+		protected $tables = [];
+
+		/**
 		 * Checks and extract the model file. If the file can be found and extracted, the extracted path will be returned.
 		 * @return string
 		 */
@@ -106,22 +112,34 @@
 			];
 		} // function
 
-		protected function getMigrationFields(\DOMNodeList $fields, \DOMXPath $rootPath)
+		/**
+		 * Returns the migration fields of the model.
+		 * @param \DOMXPath $rootPath
+		 * @return MigrationField[]
+		 */
+		protected function getMigrationFields(\DOMXPath $rootPath)
 		{
 			$fieldObjects = [];
 
-			/** @var \DOMElement $name */
-			foreach ($fields as $field)
+			$fields = $rootPath->query(
+				'./value[@type="list" and @key="columns"]/value[@type="object" and @struct-name="db.mysql.Column"]'
+			);
+
+			if ($fields && $fields->length)
 			{
-				$fieldName = $rootPath->query('./value[@key="name"]', $field)->item(0)->nodeValue;
-
-				if (in_array($fieldName, $this->skippedFields))
+				/** @var \DOMNode $field */
+				foreach ($fields as $field)
 				{
-					continue;
-				} // if
+					$fieldName = $rootPath->query('./value[@key="name"]', $field)->item(0)->nodeValue;
 
-				$fieldObjects[$fieldName] = (new MigrationField($fieldName))->load($field, $rootPath);
-			} // foreach
+					if (in_array($fieldName, $this->skippedFields))
+					{
+						continue;
+					} // if
+
+					$fieldObjects[$fieldName] = (new MigrationField($fieldName))->load($field, $rootPath);
+				} // foreach
+			} // if
 
 			return $fieldObjects;
 		} // function
@@ -155,11 +173,7 @@
 			{
 				$this->call('make:model', ['name' => $tableName = $tableNames->item(0)->nodeValue]);
 
-				$fields = $path->query(
-					'./value[@type="list" and @key="columns"]/value[@type="object" and @struct-name="db.mysql.Column"]'
-				);
-
-				if ($fields && $fields->length && $fieldObjects = $this->getMigrationFields($fields, $path))
+				if ($fieldObjects = $this->getMigrationFields($path))
 				{
 					// TODO Move this saving to a class.
 					$migrationFiles = glob(
@@ -177,6 +191,12 @@
 							)
 						);
 					} // if
+
+					/*
+					 * TODOS
+					 * ./value[@struct-name="db.mysql.ForeignKey"]
+					 * ./value[@struct-name="db.mysql.Index"]
+					 */
 
 					(new ModelContent('\\' . $this->getAppNamespace() . $tableName))
 						->setFillable(array_keys($fieldObjects))
