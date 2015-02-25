@@ -44,6 +44,84 @@
 		protected $tables = [];
 
 		/**
+		 * Adds the simple indices to the fields directly and returns the indices for multiple values.
+		 * @param MigrationField[] $fields
+		 * @param \DOMXPath $rootPath
+		 * @return array
+		 * @todo   Primary missing; Problems with m:ns; Missing FK in Models.
+		 */
+		protected function addIndicesToFields(array $fields, \DOMXPath $rootPath)
+		{
+			$multipleIndices = [];
+			$idMap = array_flip(array_map(function(MigrationField $field) { return $field->getId(); }, $fields));
+
+			/** @var MigrationField $field */
+			foreach ($fields as $name => $field)
+			{
+				$usedId = $field->getId();
+				$indexNodes = $rootPath->query(
+					'./value[@content-struct-name="db.mysql.Index" and @key="indices"]/' .
+						'value[@type="object" and @struct-name="db.mysql.Index"]//' .
+							'value[@type="object" and @struct-name="db.mysql.IndexColumn"]//' .
+								'link[@type="object" and @struct-name="db.Column" and @key="referencedColumn" and text() = "' . $usedId . '"]/' .
+							'../' .
+						'../' .
+					'..'
+				);
+
+				if ($indexNodes && $indexNodes->length)
+				{
+					/** @var \DOMNode $indexNode */
+					foreach ($indexNodes as $indexNode)
+					{
+						$indexColumns = $rootPath->query(
+							'.//link[@type="object" and @struct-name="db.Column" and @key="referencedColumn"]',
+							$indexNode
+						);
+
+						$isSingleColumn = $indexColumns && $indexColumns->length <= 1;
+						$multiCall = !$isSingleColumn ? '$table->' : '';
+
+						if ($rootPath->evaluate('boolean(./value[@type="int" and @key="unique" and number() = 1])', $indexNode))
+						{
+							if ($isSingleColumn)
+							{
+								$field->unique();
+							} // if
+							else
+							{
+								$multiCall .= 'unique([';
+							} // else
+						} // if
+
+						if ($rootPath->evaluate('boolean(./value[@type="string" and @key="indexType" and text() = "INDEX"])', $indexNode))
+						{
+							if ($isSingleColumn)
+							{
+								$field->index();
+							} // if
+							else
+							{
+								$multiCall .= 'index([';
+							} // else
+						} // if
+
+						if ($multiCall) {
+							/** @var \DOMNode $column */
+							foreach ($indexColumns as $column) {
+								$multiCall .= var_export($idMap[$column->nodeValue], true) . ', ';
+							} // foreach
+
+							$multipleIndices[] = rtrim($multiCall, ', ') . ']);';
+						} // if
+					} // foreach
+				} // if
+			} // foreach
+
+			return array_unique($multipleIndices);
+		} // function
+
+		/**
 		 * Checks and extract the model file. If the file can be found and extracted, the extracted path will be returned.
 		 * @return string
 		 */
@@ -171,14 +249,19 @@
 
 			if ($tableNames && $tableNames->length)
 			{
+				// TODO Use model name after naming check.
 				$this->call('make:model', ['name' => $tableName = $tableNames->item(0)->nodeValue]);
 
 				if ($fieldObjects = $this->getMigrationFields($path))
 				{
-					// TODO Move this saving to a class.
+					$multipleIndices = $this->addIndicesToFields($fieldObjects, $path);
+
+					// TODO Move the following to a class.
 					$migrationFiles = glob(
 						$this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$tableName}_table.php"
 					);
+
+					$search = "\$table->increments('id');\n";
 
 					if ($migrationFiles)
 					{
@@ -186,7 +269,7 @@
 							$migrationFile = end($migrationFiles),
 							str_replace(
 								$search = "\$table->increments('id');\n",
-								$search . implode("\n", $fieldObjects) . "\n",
+								$search . implode("\n", $fieldObjects) . "\n" . implode("\n", $multipleIndices),
 								file_get_contents($migrationFile)
 							)
 						);
@@ -195,7 +278,6 @@
 					/*
 					 * TODOS
 					 * ./value[@struct-name="db.mysql.ForeignKey"]
-					 * ./value[@struct-name="db.mysql.Index"]
 					 */
 
 					(new ModelContent('\\' . $this->getAppNamespace() . $tableName))

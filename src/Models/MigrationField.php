@@ -8,6 +8,12 @@
 	 */
 	class MigrationField {
 		/**
+		 * The desired field.
+		 * @var string
+		 */
+		protected $fieldName = '';
+
+		/**
 		 * The id of the field in the model.
 		 * @var string
 		 */
@@ -18,12 +24,6 @@
 		 * @var array
 		 */
 		protected $migrations = [];
-
-		/**
-		 * The desired field.
-		 * @var string
-		 */
-		protected $fieldName = '';
 
 		/**
 		 * XPath evals to check if a field option is needed.
