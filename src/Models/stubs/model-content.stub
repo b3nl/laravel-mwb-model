@@ -11,3 +11,5 @@
 	 * @var array
 	 */
 	protected $fillable = {{fillable}};
+
+	// {{relations}}

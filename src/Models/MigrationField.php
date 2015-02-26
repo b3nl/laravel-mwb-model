@@ -1,18 +1,14 @@
 <?php namespace b3nl\MWBModel\Models;
 
+	use b3nl\MWBModel\Models\Migration\Base;
+
 	/**
 	 * Class to prepare the database fields for the laravel migrations.
 	 * @package b3nl\MWBModel
 	 * @subpackage Models
 	 * @version $id$
 	 */
-	class MigrationField {
-		/**
-		 * The desired field.
-		 * @var string
-		 */
-		protected $fieldName = '';
-
+	class MigrationField extends Base {
 		/**
 		 * The id of the field in the model.
 		 * @var string
@@ -20,10 +16,10 @@
 		protected $id = '';
 
 		/**
-		 * The found migration calls.
-		 * @var array
+		 * The desired field.
+		 * @var string
 		 */
-		protected $migrations = [];
+		protected $name = '';
 
 		/**
 		 * XPath evals to check if a field option is needed.
@@ -95,67 +91,13 @@
 		];
 
 		/**
-		 * Adds this method call to the list of migration calls.
-		 * @param string $method
-		 * @param array $aArgs
-		 * @return MigrationField
-		 */
-		public function __call($method, array $aArgs = [])
-		{
-			// an index can't overwrite a foreign key.
-			if (($method !== 'index') || (!isset($this->migrations['foreign']))) {
-				$this->migrations[$method] = $aArgs;
-			} // if
-
-			// the foreign key overwrites an index.
-			if (($method === 'foreign') && (isset($this->migrations['index']))) {
-				unset($this->migrations['index']);
-			} // if
-
-			return $this;
-		} // function
-
-		/**
 		 * The construct.
-		 * @param string $fieldName The name of the field.
+		 * @param string $name The name of the field.
 		 */
-		public function __construct($fieldName)
+		public function __construct($name)
 		{
-			$this->fieldName = $fieldName;
+			$this->setName($name);
 		} // function
-
-		/**
-		 * Returns the method call, to be saved in the migration file.
-		 * @return string
-		 */
-		public function __toString()
-		{
-			$fieldMigration = '';
-
-			if ($migrations = $this->getMigrations())
-			{
-				$fieldMigration .= '$table';
-
-				$paramParser = function ($value)
-				{
-					return var_export($value, true);
-				};
-
-				foreach ($migrations as $method => $params)
-				{
-					$fieldMigration .= "->{$method}(";
-
-					if ($params)
-					{
-						$fieldMigration .= implode(', ', array_map($paramParser, $params));
-					} // if
-
-					$fieldMigration .= ')';
-				} // foreach
-			} // if
-
-			return $fieldMigration . ";";
-		}
 
 		/**
 		 * Returns the id of this field in the model.
@@ -164,16 +106,16 @@
 		public function getId()
 		{
 			return $this->id;
-		} // function
+		}
 
 		/**
-		 * Returns the migration calls for a field.
-		 * @return array
+		 * Returns the field name.
+		 * @return string
 		 */
-		public function getMigrations()
+		public function getName()
 		{
-			return $this->migrations;
-		} // function
+			return $this->name;
+		}
 
 		/**
 		 * Loads the database migrations calls of the database field..
@@ -204,7 +146,7 @@
 
 			if (!$isOptional)
 			{
-				$params[] = $this->fieldName;
+				$params[] = $this->name;
 			} // if
 
 			foreach ($migrationRules as $ruleMethod => $rules)
@@ -257,6 +199,18 @@
 		public function setId($id)
 		{
 			$this->id = $id;
+
+			return $this;
+		} // function
+
+		/**
+		 * Sets the fieldname.
+		 * @param string $name
+		 * @return MigrationField
+		 */
+		public function setName($name)
+		{
+			$this->name = $name;
 
 			return $this;
 		} // function

@@ -30,6 +30,6 @@
 		public function isModelTable()
 		{
 			return ($this->nodeType === \XMLReader::ELEMENT) && $this->hasAttributes &&
-				($this->getAttribute('struct-name') === 'db.mysql.Table');
+				($this->getAttribute('struct-name') === 'db.mysql.Table') && $this->name === 'value';
 		} // function
 	} // class
