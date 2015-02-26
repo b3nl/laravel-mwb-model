@@ -102,7 +102,15 @@
 		 */
 		public function __call($method, array $aArgs = [])
 		{
-			$this->migrations[$method] = $aArgs;
+			// an index can't overwrite a foreign key.
+			if (($method !== 'index') || (!isset($this->migrations['foreign']))) {
+				$this->migrations[$method] = $aArgs;
+			} // if
+
+			// the foreign key overwrites an index.
+			if (($method === 'foreign') && (isset($this->migrations['index']))) {
+				unset($this->migrations['index']);
+			} // if
 
 			return $this;
 		} // function

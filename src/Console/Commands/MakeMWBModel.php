@@ -42,13 +42,66 @@
 		 * @var array
 		 */
 		protected $tables = [];
+		
+		/**
+		 * Adds the foreign keys to the field.
+		 * @param MigrationField[] $fields
+		 * @param \DOMXPath $rootPath
+		 * @return MigrationField[]
+		 */
+		protected function addForeignKeysToFields(array $fields, \DOMXPath $rootPath)
+		{
+			$idMap = array_flip(array_map(function(MigrationField $field) { return $field->getId(); }, $fields));
+
+			/** @var MigrationField $field */
+			foreach ($fields as $name => $field)
+			{
+				$usedId = $field->getId();
+				$indexNodes = $rootPath->query(
+					'./value[@content-struct-name="db.mysql.ForeignKey" and @key="foreignKeys"]/' .
+						'value[@type="object" and @struct-name="db.mysql.ForeignKey"]//' .
+							'value[@type="list" and @content-type="object" and @content-struct-name="db.Column" and @key="columns"]/' .
+								'link[text() = "' . $usedId . '"]/' .
+						'../' .
+					'..'
+				);
+
+				if ($indexNodes && $indexNodes->length)
+				{
+					/** @var \DOMNode $indexNode */
+					foreach ($indexNodes as $indexNode)
+					{
+						$field->foreign();
+						$field->references('id');
+						$field->on(
+							$rootPath->evaluate(
+								'string(.//link[@type="object" and @struct-name="db.mysql.Table" and @key="referencedTable"])' ,
+								$indexNode
+							)
+						);
+
+						if ($rule = $rootPath->evaluate('string(./value[@key="deleteRule"])', $indexNode))
+						{
+							$field->onDelete(strtolower($rule));
+						} // if
+
+						if ($rule = $rootPath->evaluate('string(./value[@key="updateRule"])', $indexNode))
+						{
+							$field->onUpdate(strtolower($rule));
+						} // if
+					} // foreach
+				} // if
+			} // foreach
+
+			return $fields;
+		} // function
 
 		/**
 		 * Adds the simple indices to the fields directly and returns the indices for multiple values.
 		 * @param MigrationField[] $fields
 		 * @param \DOMXPath $rootPath
 		 * @return array
-		 * @todo   Primary missing; Problems with m:ns; Missing FK in Models.
+		 * @todo   Primary missing; Problems with m:ns.
 		 */
 		protected function addIndicesToFields(array $fields, \DOMXPath $rootPath)
 		{
@@ -234,6 +287,30 @@
 		} // function
 
 		/**
+		 * Returns true if the given word is a php keyword.
+		 * @param string $word
+		 * @return bool
+		 */
+		public function isReservedPHPWord($word)
+		{
+			$keywords = [
+				'__halt_compiler', 'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class',
+				'clone', 'const', 'continue', 'declare', 'default', 'die', 'do', 'echo', 'else', 'elseif', 'empty',
+				'enddeclare', 'endfor', 'endforeach', 'endif', 'endswitch', 'endwhile', 'eval', 'exit', 'extends',
+				'final', 'for', 'foreach', 'function', 'global', 'goto', 'if', 'implements', 'include', 'include_once',
+				'instanceof', 'insteadof', 'interface', 'isset', 'list', 'namespace', 'new', 'or', 'print', 'private',
+				'protected', 'public', 'require', 'require_once', 'return', 'static', 'switch', 'throw', 'trait', 'try',
+				'unset', 'use', 'var', 'while', 'xor'
+			];
+
+			$predefined_constants = [
+				'__CLASS__', '__DIR__', '__FILE__', '__FUNCTION__', '__LINE__', '__METHOD__','__NAMESPACE__', '__TRAIT__'
+			];
+
+			return in_array($word, $keywords) || in_array($word, $predefined_constants);
+		} // function
+
+		/**
 		 * Generates the model and migration for/with laravel and extends the contents of the generated classes.
 		 * @param \DOMNode $node The node of the table.
 		 * @return MakeMWBModel
@@ -245,16 +322,21 @@
 			$dom->appendChild($node);
 
 			$path = new \DOMXPath($dom);
+			$tableId    = $node->attributes->getNamedItem('id')->nodeValue;
 			$tableNames = $path->query('(./value[@key="name"])[1]');
 
 			if ($tableNames && $tableNames->length)
 			{
-				// TODO Use model name after naming check.
-				$this->call('make:model', ['name' => $tableName = $tableNames->item(0)->nodeValue]);
+				$tableName = $tableNames->item(0)->nodeValue;
+				$modelName = ucfirst($this->isReservedPHPWord($tmp = rtrim($tableName, 's')) ? $tableName : $tmp);
+				$this->tables[$tableId] = $tableName;
+
+				$this->call('make:model', ['name' => $modelName]);
 
 				if ($fieldObjects = $this->getMigrationFields($path))
 				{
 					$multipleIndices = $this->addIndicesToFields($fieldObjects, $path);
+					$this->addForeignKeysToFields($fieldObjects, $path);
 
 					// TODO Move the following to a class.
 					$migrationFiles = glob(
@@ -262,6 +344,8 @@
 					);
 
 					$search = "\$table->increments('id');\n";
+					var_dump($search . implode("\n", $fieldObjects) . "\n" . implode("\n", $multipleIndices));
+					exit;
 
 					if ($migrationFiles)
 					{
@@ -280,7 +364,7 @@
 					 * ./value[@struct-name="db.mysql.ForeignKey"]
 					 */
 
-					(new ModelContent('\\' . $this->getAppNamespace() . $tableName))
+					(new ModelContent('\\' . $this->getAppNamespace() . $modelName))
 						->setFillable(array_keys($fieldObjects))
 						->setTable($tableName)
 						->save();
