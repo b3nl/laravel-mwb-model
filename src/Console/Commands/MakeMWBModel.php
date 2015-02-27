@@ -1,6 +1,7 @@
 <?php namespace b3nl\MWBModel\Console\Commands;
 
 	use b3nl\MWBModel\MWBModelReader,
+		b3nl\MWBModel\Models\Migration\ForeignKey,
 		b3nl\MWBModel\Models\ModelContent,
 		b3nl\MWBModel\Models\TableMigration,
 		Illuminate\Console\AppNamespaceDetectorTrait,
@@ -163,26 +164,62 @@
 				} // if
 			} // while
 
-			$tableIdMap = array_map(function(TableMigration $table) { return $table->getName(); }, $tables);
+			/** @var TableMigration $tableObject */
+			foreach ($tables as $tableName => $tableObject) {
+				$tableObject->relateToOtherTables($tables);
+			} // foreach
 
 			/** @var TableMigration $tableObject */
 			foreach ($tables as $tableName => $tableObject) {
-				$tableName = $tableObject->getName();
-
 				$migrationFiles = glob(
-					$this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$tableName}_table.php"
+					$this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$tableObject->getName()}_table.php"
 				);
 
 				if ($migrationFiles)
 				{
-					$tableObject->save(end($migrationFiles), $tableIdMap);
+					$tableObject->save(end($migrationFiles), $tables);
 				} // if
 
-				(new ModelContent('\\' . $this->getAppNamespace() . $tableObject->getModelName()))
-					->setFillable(array_keys($tableObject->getFields()))
-					->setTable($tableName)
-					->save();
+				$this->saveModelForTable($tableObject);
 			} // foreach
+
+			return $this;
+		} // function
+
+		/**
+		 * Saves the model content for a table.
+		 * @param TableMigration $table
+		 * @return MakeMWBModel
+		 */
+		protected function saveModelForTable(TableMigration $table)
+		{
+			$modelContent = (new ModelContent('\\' . $this->getAppNamespace() . $table->getModelName()))
+				->setFillable(array_keys($table->getFields()))
+				->setTable($table->getName());
+
+			if ($genericCalls = $table->getGenericCalls())
+			{
+				foreach ($genericCalls as $call)
+				{
+					if ($call instanceof ForeignKey)
+					{
+						$modelContent->addForeignKey($call);
+					} // if
+				} // foreach
+			} // if
+
+			if ($sources = $table->getRelationSources())
+			{
+				foreach ($sources as $call)
+				{
+					if ($call instanceof ForeignKey)
+					{
+						$modelContent->addForeignKey($call);
+					} // if
+				} // foreach
+			} // if
+
+			$modelContent->save();
 
 			return $this;
 		} // function

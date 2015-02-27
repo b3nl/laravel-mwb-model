@@ -1,5 +1,7 @@
 <?php namespace b3nl\MWBModel\Models;
 
+	use b3nl\MWBModel\Models\Migration\ForeignKey;
+
 	/**
 	 * Saves content in the model stub.
 	 * @method ModelContent setFillable() setFillable(array $fillable) Sets the fillable fields.
@@ -9,6 +11,12 @@
 	 * @version $id$
 	 */
 	class ModelContent {
+		/**
+		 * Strings which should be added additionally.
+		 * @var ForeignKey[]
+		 */
+		protected $foreignKeys = [];
+
 		/**
 		 * Caches the used properties.
 		 * @var array
@@ -46,13 +54,70 @@
 		} // function
 
 		/**
+		 * Adds a foreign key to this model.
+		 * @param ForeignKey $key
+		 * @return ModelContent
+		 */
+		public function addForeignKey(ForeignKey $key)
+		{
+			$this->foreignKeys[] = $key;
+
+			return $this;
+		}
+
+		/**
+		 * Returns the foreign keys.
+		 * @return Migration\ForeignKey[]
+		 */
+		public function getForeignKeys()
+		{
+			return $this->foreignKeys;
+		} // function
+
+		/**
+		 * Returns the parsed method calls for the foreign keys.
+		 * @param \ReflectionClass $toModel
+		 * @return array
+		 */
+		protected function getMethodCallsForForeignKeys(\ReflectionClass $toModel)
+		{
+			$methods = [];
+
+			if ($keys = $this->getForeignKeys()) {
+				/** @var ForeignKey $key */
+				foreach ($keys as $key) {
+					$relatedTable = $key->getRelatedTable();
+
+					if ($key->isSource())
+					{
+						$methodName = strtolower($relatedTable->getName());
+						$methodContent = 'return $this->has' . ($key->isForMany() ? 'Many' : 'One') .
+							"('{$toModel->getNamespaceName()}\\{$relatedTable->getModelName()}');";
+					} // if
+					else
+					{
+						$methodName = strtolower($relatedTable->getModelName());
+						$methodContent = "return \$this->belongsTo('{$toModel->getNamespaceName()}\\{$relatedTable->getModelName()}', '{$key->foreign}');";
+					} // else
+
+					$method = "/**\n * Getter for {$key->on}.\n * @return \\Illuminate\\Database\\Eloquent\\Relations\\Relation\n */\n" .
+						"public function {$methodName}()\n{\n\t{$methodContent}\n} // function";
+
+					$methods[] = $method;
+				} // foreach
+			} // if
+
+			return $methods;
+		} // function
+
+		/**
 		 * Returns the extended object.
 		 * @return object|string
 		 */
 		public function getTargetModel()
 		{
 			return $this->targetModel;
-		}
+		} // function
 
 		/**
 		 * Returns the used properties.
@@ -73,7 +138,7 @@
 			try {
 				$reflection = new \ReflectionClass($target = $this->getTargetModel());
 
-				$this->writeToModel($reflection->getFileName(), $inPlaceholder);
+				$this->writeToModel($reflection, $inPlaceholder);
 			} catch (\ReflectionException $exc) {
 				throw new \LogicException(sprintf(
 					'Model %s not found', is_object($target) ? get_class($target) : $target
@@ -85,12 +150,13 @@
 
 		/**
 		 * Writes the stub properties to the target model.
-		 * @param string $modelFile
+		 * @param \ReflectionClass $toModel The reflection of the target model.
 		 * @param string $inPlaceholder
 		 * @return int
 		 */
-		protected function writeToModel($modelFile, $inPlaceholder = "\t//")
+		protected function writeToModel(\ReflectionClass $toModel, $inPlaceholder = "\t//")
 		{
+			$modelFile = $toModel->getFileName();
 			$replaces = [];
 			$searches = [];
 
@@ -99,11 +165,20 @@
 				$searches[] = '{{' . $property . '}}';
 			} // foreach
 
+			$newContent = str_replace($searches, $replaces, file_get_contents(realpath(__DIR__ . '/stubs/model-content.stub')));
+			$methodContent = '';
+
+			if ($keys = $this->getForeignKeys()) {
+				$methodContent = implode("\n\n", $this->getMethodCallsForForeignKeys($toModel));
+			} // if
+
+			$newContent = str_replace('// {{relations}}', $methodContent, $newContent);
+
 			return file_put_contents(
 				$modelFile,
 				str_replace(
 					$inPlaceholder,
-					str_replace($searches, $replaces, file_get_contents(realpath(__DIR__ . '/stubs/model-content.stub'))),
+					$newContent,
 					file_get_contents($modelFile)
 				)
 			);

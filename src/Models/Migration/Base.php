@@ -1,5 +1,12 @@
 <?php namespace b3nl\MWBModel\Models\Migration;
 
+	/**
+	 * Basic migration call.
+	 * @author b3nl <github@b3nl.de>
+	 * @package b3nl\MWBModel
+	 * @subpackage Models\Migration
+	 * @version $id$
+	 */
 	class Base {
 		/**
 		 * The found migration calls.
@@ -32,6 +39,45 @@
 			} // if
 
 			return $this;
+		} // function
+
+		/**
+		 * Returns the parameters of the given migrated method.
+		 * @param string $name
+		 * @return null|mixed
+		 */
+		public function __get($name)
+		{
+			$return = null;
+
+			if (isset($this->$name)) {
+				$tmp = $this->migrations[$name];
+
+				$return = is_array($tmp) && count($tmp) === 1 ? current($tmp) : $tmp;
+			} //
+
+			return $return;
+		} // function
+
+		/**
+		 * Returns true if there is a migration with the given method call.
+		 * @param string $name
+		 * @return bool
+		 */
+		public function __isset($name)
+		{
+			return isset($this->migrations[$name]);
+		} // function
+
+		/**
+		 * Changes the parameters of a migration call.
+		 * @param string $name The method name.
+		 * @param $value
+		 * @return void
+		 */
+		public function __set($name, $value)
+		{
+			$this->migrations[$name] = $value;
 		} // function
 
 		/**

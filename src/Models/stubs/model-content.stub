@@ -1,15 +1,15 @@
-	/**
-	 * The database table used by the model.
-	 *
-	 * @var string
-	 */
-	protected $table = {{table}};
+/**
+ * The database table used by the model.
+ *
+ * @var string
+ */
+protected $table = {{table}};
 
-	/**
-	 * The attributes that are mass assignable.
-	 *
-	 * @var array
-	 */
-	protected $fillable = {{fillable}};
+/**
+ * The attributes that are mass assignable.
+ *
+ * @var array
+ */
+protected $fillable = {{fillable}};
 
-	// {{relations}}
+// {{relations}}

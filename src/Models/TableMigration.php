@@ -1,6 +1,7 @@
 <?php namespace b3nl\MWBModel\Models;
 
-	use b3nl\MWBModel\Models\Migration\Base;
+	use b3nl\MWBModel\Models\Migration\Base,
+		b3nl\MWBModel\Models\Migration\ForeignKey;
 
 	/**
 	 * Class to prepare the table for the laravel migrations.
@@ -9,6 +10,12 @@
 	 * @version $id$
 	 */
 	class TableMigration {
+		/**
+		 * Caching of the database fields.
+		 * @var MigrationField[]
+		 */
+		protected $fields = [];
+
 		/**
 		 * General columns with unspeficied/amobiguous rows.
 		 * @var array
@@ -22,10 +29,10 @@
 		protected $id = '';
 
 		/**
-		 * Caching of the database fields.
-		 * @var MigrationField[]
+		 * The used model node.
+		 * @var null|\DOMNode
 		 */
-		protected $fields = [];
+		protected $modelNode = null;
 
 		/**
 		 * Name of this table.
@@ -34,16 +41,29 @@
 		protected $name = '';
 
 		/**
-		 * The used model node.
-		 * @var null|\DOMNode
+		 * The foreign keys, where this table is the source.
+		 * @var ForeignKey[]
 		 */
-		protected $modelNode = null;
+		protected $relationSources = [];
 
 		/**
 		 * Fields which should be skipped by default.
 		 * @var array
 		 */
 		protected $skippedFields = ['created_at', 'id', 'updated_at'];
+
+		/**
+		 * Adds a foreign key, where this table is the source.
+		 * @param ForeignKey $foreignKey
+		 * @return TableMigration
+		 */
+		public function addAsRelationSource(ForeignKey $foreignKey)
+		{
+			$foreignKey->isSource(true);
+			$this->relationSources[] = $foreignKey;
+
+			return $this;
+		} // function
 
 		/**
 		 * Adds a field for the given name.
@@ -62,7 +82,7 @@
 		 * @param \DOMXPath $rootPath
 		 * @return MigrationField[]
 		 */
-		protected function addForeignKeysToFields(\DOMXPath $rootPath)
+		protected function addForeignKeys(\DOMXPath $rootPath)
 		{
 			$fields = $this->getFields();
 			$idMap = array_flip(array_map(function(MigrationField $field) { return $field->getId(); }, $fields));
@@ -78,7 +98,7 @@
 					/** @var \DOMNode $indexNode */
 					foreach ($indexNodes as $indexNode)
 					{
-						$call = new Base();
+						$call = new ForeignKey();
 
 						$call
 							->foreign($field->getName())
@@ -99,6 +119,8 @@
 						{
 							$call->onUpdate(strtolower($rule));
 						} // if
+
+						$call->isForMany((int) $rootPath->evaluate('number(./value[@key="many"])', $indexNode) === 1);
 					} // foreach
 
 					$this->addGenericCall($call);
@@ -209,33 +231,6 @@
 		} // function
 
 		/**
-		 * Returns the foreign key fields for a field.
-		 * @param MigrationField $field
-		 * @param \DOMXPath $rootPath
-		 * @return \DOMNodeList
-		 */
-		protected function getForeignKeysForField(MigrationField $field, \DOMXPath $rootPath)
-		{
-			return $rootPath->query(
-				'./value[@content-struct-name="db.mysql.ForeignKey" and @key="foreignKeys"]/' .
-					'value[@type="object" and @struct-name="db.mysql.ForeignKey"]//' .
-							'value[@type="list" and @content-type="object" and @content-struct-name="db.Column" and @key="columns"]/' .
-						'link[text() = "' . $field->getId() . '"]/' .
-					'../' .
-				'..'
-			);
-		} // function
-		
-		/**
-		 * Returns the generic calls, the ambigiuous calls for fields.
-		 * @return Base[]
-		 */
-		public function getGenericCalls()
-		{
-			return $this->genericCalls;
-		} // function
-
-		/**
 		 * Returns the field with the given name
 		 * @param string $name
 		 * @return null
@@ -255,6 +250,33 @@
 		} // function
 
 		/**
+		 * Returns the foreign key fields for a field.
+		 * @param MigrationField $field
+		 * @param \DOMXPath $rootPath
+		 * @return \DOMNodeList
+		 */
+		protected function getForeignKeysForField(MigrationField $field, \DOMXPath $rootPath)
+		{
+			return $rootPath->query(
+				'./value[@content-struct-name="db.mysql.ForeignKey" and @key="foreignKeys"]/' .
+				'value[@type="object" and @struct-name="db.mysql.ForeignKey"]//' .
+				'value[@type="list" and @content-type="object" and @content-struct-name="db.Column" and @key="columns"]/' .
+				'link[text() = "' . $field->getId() . '"]/' .
+				'../' .
+				'..'
+			);
+		} // function
+
+		/**
+		 * Returns the generic calls, the ambigiuous calls for fields.
+		 * @return Base[]
+		 */
+		public function getGenericCalls()
+		{
+			return $this->genericCalls;
+		} // function
+
+		/**
 		 * Returns the id of this field in the model.
 		 * @return string
 		 */
@@ -262,15 +284,6 @@
 		{
 			return $this->id;
 		}
-
-		/**
-		 * Returns the name of the table.
-		 * @return string
-		 */
-		public function getName()
-		{
-			return $this->name;
-		} // function
 
 		/**
 		 * Returns the model name.
@@ -281,6 +294,24 @@
 			$tableName = $this->getName();
 
 			return ucfirst($this->isReservedPHPWord($tmp = rtrim($tableName, 's')) ? $tableName : $tmp);
+		} // function
+
+		/**
+		 * Returns the name of the table.
+		 * @return string
+		 */
+		public function getName()
+		{
+			return $this->name;
+		}
+
+		/**
+		 * Returns the Relation-Sources.
+		 * @return Migration\ForeignKey[]
+		 */
+		public function getRelationSources()
+		{
+			return $this->relationSources;
 		} // function
 
 		/**
@@ -307,6 +338,11 @@
 			return in_array($word, $keywords) || in_array($word, $predefined_constants);
 		} // function
 
+		/**
+		 * Load this table with its dom node.
+		 * @param \DOMNode $node
+		 * @return TableMigration
+		 */
 		public function load(\DOMNode $node)
 		{
 			$dom = new \DOMDocument('1.0');
@@ -355,16 +391,44 @@
 
 			$this->addIndicesToFields($rootPath);
 
-			return $this->addForeignKeysToFields($rootPath);
+			return $this->addForeignKeys($rootPath);
+		} // function
+
+		/**
+		 * Relates this table to others.
+		 * @param TableMigration[] $otherTables
+		 * @return TableMigration
+		 */
+		public function relateToOtherTables(array $otherTables)
+		{
+			if ($calls = $this->getGenericCalls())
+			{
+				foreach ($calls as $call)
+				{
+					if ($on = $call->on)
+					{
+						/** @var TableMigration $otherTable */
+						$otherTable = $otherTables[$on];
+
+						$call->setRelatedTable($otherTable)->on($otherTable->getName());
+
+						$other = clone $call;
+
+						$otherTable->addAsRelationSource($other->setRelatedTable($this));
+					} // if
+				} // foreach#
+			} // if
+
+			return $this;
 		} // function
 
 		/**
 		 * Saves the table in the given migration file.
 		 * @param string $file
-		 * @param array $otherTables Mapping of the table ids to their names.
+		 * @param TableMigration[] $otherTables Mapping of the table ids to their names.
 		 * @return bool
 		 */
-		public function save($file, $otherTables)
+		public function save($file, array $otherTables)
 		{
 			$replace = $search = "\$table->increments('id');\n";
 
@@ -378,12 +442,13 @@
 				$replace .= "\n" . implode("\n", $calls);
 			} // if
 
-			foreach ($otherTables as $id => $name)
+			/** @var TableMigrtion $table */
+			foreach ($otherTables as $id => $table)
 			{
-				$replace = str_replace($id, $name, $replace);
+				$replace = str_replace($id, $table->getName(), $replace);
 			} // foreach
 
-			return (bool) file_put_contents($file, str_replace($search, $replace, file_get_contents($file)));
+			return (bool) file_put_contents($file, str_replace($search, $replace . "\n", file_get_contents($file)));
 		} // function
 
 		/**
