@@ -4,6 +4,7 @@
 
 	/**
 	 * Saves content in the model stub.
+	 * @method ModelContent setDates() setDates(array $dates) Sets the dates fields.
 	 * @method ModelContent setFillable() setFillable(array $fillable) Sets the fillable fields.
 	 * @method ModelContent setTable() setTable(string $table) Sets the table name.
 	 * @package b3nl\MWBModel
@@ -21,13 +22,21 @@
 		 * Caches the used properties.
 		 * @var array
 		 */
-		protected $properties = [];
+		protected $properties = [
+			'dates' => [], 'fillable' => [], 'table' => ''
+		];
 
 		/**
 		 * The extended model.
 		 * @var object|string
 		 */
 		protected $targetModel = null;
+
+		/**
+		 * The array of used traits for the model.
+		 * @var array
+		 */
+		protected $traits = [];
 
 		/**
 		 * Construct.
@@ -46,7 +55,8 @@
 		 */
 		public function __call($method, array $args = [])
 		{
-			if (strpos($method, 'set') === 0) {
+			if (strpos($method, 'set') === 0)
+			{
 				$this->properties[lcfirst(substr($method, 3))] = $args[0];
 			} // if
 
@@ -63,7 +73,7 @@
 			$this->foreignKeys[] = $key;
 
 			return $this;
-		}
+		} // function
 
 		/**
 		 * Returns the foreign keys.
@@ -83,9 +93,11 @@
 		{
 			$methods = [];
 
-			if ($keys = $this->getForeignKeys()) {
+			if ($keys = $this->getForeignKeys())
+			{
 				/** @var ForeignKey $key */
-				foreach ($keys as $key) {
+				foreach ($keys as $key)
+				{
 					$relatedTable = $key->getRelatedTable();
 
 					if ($key->isSource())
@@ -111,15 +123,6 @@
 		} // function
 
 		/**
-		 * Returns the extended object.
-		 * @return object|string
-		 */
-		public function getTargetModel()
-		{
-			return $this->targetModel;
-		} // function
-
-		/**
 		 * Returns the used properties.
 		 * @return array
 		 */
@@ -129,23 +132,55 @@
 		} // function
 
 		/**
+		 * Returns the extended object.
+		 * @return object|string
+		 */
+		public function getTargetModel()
+		{
+			return $this->targetModel;
+		}
+
+		/**
+		 * Returns the special traits for the model.
+		 * @return array
+		 */
+		public function getTraits()
+		{
+			return $this->traits;
+		} // function
+
+		/**
 		 * Saves the properties in the placeholder.
 		 * @param string $inPlaceholder
 		 * @return bool
 		 */
 		public function save($inPlaceholder = "\t//")
 		{
-			try {
+			try
+			{
 				$reflection = new \ReflectionClass($target = $this->getTargetModel());
 
 				$this->writeToModel($reflection, $inPlaceholder);
-			} catch (\ReflectionException $exc) {
+			} catch (\ReflectionException $exc)
+			{
 				throw new \LogicException(sprintf(
 					'Model %s not found', is_object($target) ? get_class($target) : $target
 				));
 			} // catch
 
 			return true;
+		} // function
+
+		/**
+		 * Sets the names of the traits.
+		 * @param array $traits
+		 * @return ModelContent
+		 */
+		public function setTraits($traits)
+		{
+			$this->traits = $traits;
+
+			return $this;
 		} // function
 
 		/**
@@ -160,19 +195,27 @@
 			$replaces = [];
 			$searches = [];
 
-			foreach ($this->getProperties() as $property => $content) {
+			foreach ($this->getProperties() as $property => $content)
+			{
 				$replaces[] = var_export($content, true);
 				$searches[] = '{{' . $property . '}}';
 			} // foreach
 
-			$newContent = str_replace($searches, $replaces, file_get_contents(realpath(__DIR__ . '/stubs/model-content.stub')));
 			$methodContent = '';
+			$newContent = str_replace(
+				$searches, $replaces, file_get_contents(realpath(__DIR__ . '/stubs/model-content.stub'))
+			);
 
-			if ($keys = $this->getForeignKeys()) {
+			if ($keys = $this->getForeignKeys())
+			{
 				$methodContent = implode("\n\n", $this->getMethodCallsForForeignKeys($toModel));
 			} // if
 
-			$newContent = str_replace('// {{relations}}', $methodContent, $newContent);
+			$newContent = str_replace(
+				['// {{relations}}', '// {{traits}}'],
+				[$methodContent, ($traits = $this->getTraits()) ? 'use ' . implode(', ', $traits) . ';' : ''],
+				$newContent
+			);
 
 			return file_put_contents(
 				$modelFile,

@@ -1,9 +1,11 @@
+// {{traits}}
+
 /**
- * The database table used by the model.
+ * The attributes that should be mutated to dates.
  *
- * @var string
+ * @var array
  */
-protected $table = {{table}};
+protected $dates = {{dates}};
 
 /**
  * The attributes that are mass assignable.
@@ -11,5 +13,12 @@ protected $table = {{table}};
  * @var array
  */
 protected $fillable = {{fillable}};
+
+/**
+ * The database table used by the model.
+ *
+ * @var string
+ */
+protected $table = {{table}};
 
 // {{relations}}

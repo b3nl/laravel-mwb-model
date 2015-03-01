@@ -315,6 +315,16 @@
 		} // function
 
 		/**
+		 * Returns true if there is a field with the given name.
+		 * @param string $name
+		 * @return bool
+		 */
+		public function hasField($name)
+		{
+			return array_key_exists($name, $this->fields);
+		} // function
+
+		/**
 		 * Returns true if the given word is a php keyword.
 		 * @param string $word
 		 * @return bool

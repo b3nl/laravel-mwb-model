@@ -125,21 +125,6 @@
 		} // function
 
 		/**
-		 * Generates the model and migration for/with laravel and extends the contents of the generated classes.
-		 * @param \DOMNode $node The node of the table.
-		 * @return MakeMWBModel
-		 */
-		protected function handleModelTable(\DOMNode $node)
-		{
-			$tableObject = new TableMigration();
-			$tableObject->load($node);
-
-			$this->call('make:model', ['name' => $tableObject->getModelName()]);
-
-			return $tableObject;
-		} // function
-
-		/**
 		 * Loads the model tables out of the model file.
 		 * @return MakeMWBModel
 		 * @todo   We need to save a way to save the relations in the models.
@@ -158,7 +143,7 @@
 			{
 				if ($reader->isModelTable())
 				{
-					$table = $this->handleModelTable($reader->expand());
+					$table = $this->loadModelTable($reader->expand());
 
 					$tables[$table->getId()] = $table;
 				} // if
@@ -187,15 +172,41 @@
 		} // function
 
 		/**
+		 * Generates the model and migration for/with laravel and extends the contents of the generated classes.
+		 * @param \DOMNode $node The node of the table.
+		 * @return MakeMWBModel
+		 */
+		protected function loadModelTable(\DOMNode $node)
+		{
+			$tableObject = new TableMigration();
+			$tableObject->load($node);
+
+			$this->call('make:model', ['name' => $tableObject->getModelName()]);
+
+			return $tableObject;
+		} // function
+
+		/**
 		 * Saves the model content for a table.
 		 * @param TableMigration $table
 		 * @return MakeMWBModel
 		 */
 		protected function saveModelForTable(TableMigration $table)
 		{
-			$modelContent = (new ModelContent('\\' . $this->getAppNamespace() . $table->getModelName()))
-				->setFillable(array_keys($table->getFields()))
-				->setTable($table->getName());
+			$fields = $table->getFields();
+			$modelContent =
+				(new ModelContent('\\' . $this->getAppNamespace() . $table->getModelName()))
+					->setTable($table->getName());
+
+			if (array_key_exists($field = 'deleted_at', $fields)) {
+				unset($fields[$field]);
+
+				$modelContent
+					->setDates(['deleted_at'])
+					->setTraits(['\Illuminate\Database\Eloquent\SoftDeletes']);
+			} // if
+
+			$modelContent->setFillable(array_keys($fields));
 
 			if ($genericCalls = $table->getGenericCalls())
 			{
