@@ -54,6 +54,9 @@
 					'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" and text() = "UNSIGNED"])'
 				]
 			],
+			'softDeletes' => [
+				'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.datetime"]/../value[@key="name" and text() = "deleted_at"]'
+			],
 			'dateTime' => [
 				'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.datetime"]'
 			],

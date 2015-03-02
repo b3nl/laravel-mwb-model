@@ -14,7 +14,13 @@
 		 * Is this foreign key for a 1:n?
 		 * @var bool
 		 */
-		protected $isForMany = true;
+		protected $isForMany = false;
+
+		/**
+		 * Is this foreign key for a pivot table?
+		 * @var bool
+		 */
+		protected $isForPivot = false;
 
 		/**
 		 * Is this this the relation source?
@@ -42,13 +48,30 @@
 		 * @param bool $newStatus The new status.
 		 * @return bool Returns the old status.
 		 */
-		public function isForMany($newStatus = true)
+		public function isForMany($newStatus = false)
 		{
 			$oldStatus = $this->isForMany;
 
 			if (func_num_args())
 			{
 				$this->isForMany = $newStatus;
+			} // if
+
+			return $oldStatus;
+		} // function
+
+		/**
+		 * Is this foreign key for a m:n?
+		 * @param bool $newStatus The new status.
+		 * @return bool Returns the old status.
+		 */
+		public function isForPivotTable($newStatus = false)
+		{
+			$oldStatus = $this->isForPivot;
+
+			if (func_num_args())
+			{
+				$this->isForPivot = $newStatus;
 			} // if
 
 			return $oldStatus;

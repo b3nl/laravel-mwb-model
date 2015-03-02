@@ -39,6 +39,12 @@
 		protected $name = 'make:mwb-model';
 
 		/**
+		 * Caches the names of the m:n tables.
+		 * @var array
+		 */
+		protected $pivotTables = [];
+
+		/**
 		 * Saving of the table names and their ids.
 		 * @var array
 		 */
@@ -78,6 +84,7 @@
 		 */
 		public function fire()
 		{
+			$this->loadMNTables();
 			$dir = $this->checkAndExtractModelFile();
 
 			foreach (glob($dir . '*.mwb.xml') as $file)
@@ -120,7 +127,7 @@
 		protected function getOptions()
 		{
 			return [
-				['example', null, InputOption::VALUE_OPTIONAL, 'An example option.', null],
+				['pivots', null, InputOption::VALUE_OPTIONAL, 'Please provide the names of the m:n-pivot tables (table1,table2,...), if there are any:', ''],
 			];
 		} // function
 
@@ -150,22 +157,37 @@
 			} // while
 
 			/** @var TableMigration $tableObject */
-			foreach ($tables as $tableName => $tableObject) {
+			foreach ($tables as $tableName => $tableObject)
+			{
 				$tableObject->relateToOtherTables($tables);
 			} // foreach
 
 			/** @var TableMigration $tableObject */
-			foreach ($tables as $tableName => $tableObject) {
+			foreach ($tables as $tableName => $tableObject)
+			{
+				if ($withModel = $tableObject->needsLaravelModel())
+				{
+					$this->call('make:model', ['name' => $tableObject->getModelName()]);
+				} // if
+				else
+				{
+					$this->call(
+						'make:migration', ['name' => "create_{$tableObject->getName()}_table", '--create' => $tableObject->getName()]
+					);
+				} // else
+
 				$migrationFiles = glob(
 					$this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$tableObject->getName()}_table.php"
 				);
 
 				if ($migrationFiles)
 				{
-					$tableObject->save(end($migrationFiles), $tables);
+					$tableObject->save(end($migrationFiles));
 				} // if
 
-				$this->saveModelForTable($tableObject);
+				if ($withModel) {
+					$this->saveModelForTable($tableObject);
+				} // if
 			} // foreach
 
 			return $this;
@@ -179,11 +201,25 @@
 		protected function loadModelTable(\DOMNode $node)
 		{
 			$tableObject = new TableMigration();
-			$tableObject->load($node);
 
-			$this->call('make:model', ['name' => $tableObject->getModelName()]);
+			$tableObject
+				->load($node)
+				->isPivotTable($isPivot = in_array($tableObject->getName(), $this->pivotTables));
 
 			return $tableObject;
+		} // function
+
+		/**
+		 * Loads the names of the m:n tables.
+		 * @return MakeMWBModel
+		 */
+		protected function loadMNTables()
+		{
+			if ($tables = $this->option('pivots')) {
+				$this->pivotTables = array_map('trim', array_filter(explode(',', rtrim($tables, ','))));
+			} // if
+
+			return $this;
 		} // function
 
 		/**

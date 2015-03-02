@@ -102,24 +102,48 @@
 
 					if ($key->isSource())
 					{
-						$methodName = strtolower($relatedTable->getName());
-						$methodContent = 'return $this->has' . ($key->isForMany() ? 'Many' : 'One') .
-							"('{$toModel->getNamespaceName()}\\{$relatedTable->getModelName()}');";
+						$methodName = strtolower($key->isForMany() ? $relatedTable->getName() : $relatedTable->getModelName());
+						$methodReturnSuffix = 'has' . ($key->isForMany() ? 'Many' : 'One');
+						$methodContent = "return \$this->{$methodReturnSuffix}(" .
+							"'{$toModel->getNamespaceName()}\\{$relatedTable->getModelName()}'" .
+						');';
 					} // if
+					elseif ($key->isForPivotTable())
+					{
+						$methodName = strtolower($key->isForMany() && $key->isForPivotTable()
+							? $relatedTable->getName()
+							: $relatedTable->getModelName()
+						);
+
+						$methodReturnSuffix = 'belongsToMany';
+
+						$methodContent = "return \$this->{$methodReturnSuffix}(" .
+							"'{$toModel->getNamespaceName()}\\{$relatedTable->getModelName()}'" .
+						');';
+					}  // elseif
 					else
 					{
-						$methodName = strtolower($relatedTable->getModelName());
-						$methodContent = "return \$this->belongsTo('{$toModel->getNamespaceName()}\\{$relatedTable->getModelName()}', '{$key->foreign}');";
+						$methodName = strtolower($key->isForMany() && $key->isForPivotTable()
+							? $relatedTable->getName()
+							: $relatedTable->getModelName()
+						);
+
+						$methodReturnSuffix = 'belongsTo';
+
+						$methodContent = "return \$this->{$methodReturnSuffix}(" .
+							"'{$toModel->getNamespaceName()}\\{$relatedTable->getModelName()}', '{$key->foreign}'" .
+						');';
 					} // else
 
-					$method = "/**\n * Getter for {$key->on}.\n * @return \\Illuminate\\Database\\Eloquent\\Relations\\Relation\n */\n" .
-						"public function {$methodName}()\n{\n\t{$methodContent}\n} // function";
+					$method = "\t/**\n\t * Getter for {$relatedTable->getName()}.\n\t * @return \\Illuminate\\Database\\Eloquent\\Relations\\" .
+						ucfirst($methodReturnSuffix) . " \n\t */\n\t" .
+						"public function {$methodName}()\n\t{\n\t\t{$methodContent}\n\t} // function";
 
 					$methods[] = $method;
 				} // foreach
 			} // if
 
-			return $methods;
+			return array_unique($methods);
 		} // function
 
 		/**
@@ -212,7 +236,7 @@
 			} // if
 
 			$newContent = str_replace(
-				['// {{relations}}', '// {{traits}}'],
+				["\t// {{relations}}", '// {{traits}}'],
 				[$methodContent, ($traits = $this->getTraits()) ? 'use ' . implode(', ', $traits) . ';' : ''],
 				$newContent
 			);

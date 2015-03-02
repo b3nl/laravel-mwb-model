@@ -77,7 +77,7 @@
 		 */
 		public function __set($name, $value)
 		{
-			$this->migrations[$name] = $value;
+			$this->migrations[$name] = array($value);
 		} // function
 
 		/**

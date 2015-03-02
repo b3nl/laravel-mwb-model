@@ -9,7 +9,7 @@
 	 * @subpackage Models
 	 * @version $id$
 	 */
-	class TableMigration {
+	class TableMigration implements \Countable {
 		/**
 		 * Caching of the database fields.
 		 * @var MigrationField[]
@@ -27,6 +27,12 @@
 		 * @var string
 		 */
 		protected $id = '';
+
+		/**
+		 * Is this table a m:n pivot table?
+		 * @var bool
+		 */
+		protected $isPivotTable = false;
 
 		/**
 		 * The used model node.
@@ -80,7 +86,7 @@
 		/**
 		 * Adds the foreign keys to the field.
 		 * @param \DOMXPath $rootPath
-		 * @return MigrationField[]
+		 * @return TableMigration
 		 */
 		protected function addForeignKeys(\DOMXPath $rootPath)
 		{
@@ -127,7 +133,7 @@
 				} // if
 			} // foreach
 
-			return $fields;
+			return $this;
 		} // function
 
 		/**
@@ -151,6 +157,7 @@
 		 */
 		protected function addIndicesToFields(\DOMXPath $rootPath)
 		{
+			$fetchedNodes = [];
 			$fields = $this->getFields();
 			$multipleIndices = [];
 			$idMap = array_flip(array_map(function(MigrationField $field) { return $field->getId(); }, $fields));
@@ -176,6 +183,12 @@
 					/** @var \DOMNode $indexNode */
 					foreach ($indexNodes as $indexNode)
 					{
+						if (in_array($nodeId = $indexNode->attributes->getNamedItem('id')->nodeValue, $fetchedNodes)) {
+							continue;
+						} // if
+
+						$fetchedNodes[] = $nodeId;
+
 						$indexColumns = $rootPath->query(
 							'.//link[@type="object" and @struct-name="db.Column" and @key="referencedColumn"]',
 							$indexNode
@@ -212,7 +225,19 @@
 							} // else
 						} // if
 
-						if ($genericCall) {
+						if ($rootPath->evaluate('boolean(./value[@type="string" and @key="indexType" and text() = "PRIMARY"])', $indexNode))
+						{
+							if ($isSingleColumn)
+							{
+								$field->primary();
+							} // if
+							else
+							{
+								$genericMethod = 'primary';
+							} // else
+						} // if
+
+						if ($genericCall && $genericMethod) {
 							$genericParams = [];
 							/** @var \DOMNode $column */
 							foreach ($indexColumns as $column) {
@@ -228,6 +253,15 @@
 			} // foreach
 
 			return array_unique($multipleIndices);
+		} // function
+
+		/**
+		 * Returns the count of fields.
+		 * @return int
+		 */
+		public function count()
+		{
+			return count($this->fields);
 		} // function
 
 		/**
@@ -291,9 +325,20 @@
 		 */
 		public function getModelName()
 		{
-			$tableName = $this->getName();
+			$replaces  = ['y'];
+			$searches  = ['/(ies$)/u', '/(es$)/u', '/(s$)/u'];
+			$tableName = $modelName = $this->getName();
 
-			return ucfirst($this->isReservedPHPWord($tmp = rtrim($tableName, 's')) ? $tableName : $tmp);
+			foreach ($searches as $index => $search) {
+				$modelName = preg_replace($search, @$replaces[$index] ?: '', $modelName, 1, $count);
+
+				if ($count)
+				{
+					break;
+				} // if
+			} // foreach
+
+			return ucfirst($this->isReservedPHPWord($modelName) ? $tableName : $modelName);
 		} // function
 
 		/**
@@ -325,12 +370,31 @@
 		} // function
 
 		/**
+		 * Is this table a m:n pivot table?
+		 * @param bool $newStatus The new status.
+		 * @return bool The old status.
+		 */
+		public function isPivotTable($newStatus = false)
+		{
+			$oldStatus = $this->isPivotTable;
+
+			if (func_num_args())
+			{
+				$this->isPivotTable = $newStatus;
+			} // if
+
+			return $oldStatus;
+		} // function
+
+		/**
 		 * Returns true if the given word is a php keyword.
 		 * @param string $word
 		 * @return bool
 		 */
 		protected function isReservedPHPWord($word)
 		{
+			$word = strtolower($word);
+
 			$keywords = [
 				'__halt_compiler', 'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class',
 				'clone', 'const', 'continue', 'declare', 'default', 'die', 'do', 'echo', 'else', 'elseif', 'empty',
@@ -405,6 +469,15 @@
 		} // function
 
 		/**
+		 * Returns true, if this table needs a laravel model aswell.
+		 * @return bool
+		 */
+		public function needsLaravelModel()
+		{
+			return !$this->isPivotTable() || count($this->fields) > 2;
+		} // function
+
+		/**
 		 * Relates this table to others.
 		 * @param TableMigration[] $otherTables
 		 * @return TableMigration
@@ -413,20 +486,45 @@
 		{
 			if ($calls = $this->getGenericCalls())
 			{
+				$tablesByModelName = [];
+
+				/** @var TableMigration $tableObject */
+				foreach ($otherTables as $tableObject)
+				{
+					$tablesByModelName[$tableObject->getModelName()] = $tableObject;
+				} // foreach
+
+				/** @var ForeignKey $call */
 				foreach ($calls as $call)
 				{
 					if ($on = $call->on)
 					{
 						/** @var TableMigration $otherTable */
 						$otherTable = $otherTables[$on];
+						$call->on = $otherTable->getName();
 
-						$call->setRelatedTable($otherTable)->on($otherTable->getName());
+						$otherCall  = clone $call;
 
-						$other = clone $call;
+						if ($this->isPivotTable())
+						{
+							$modelNames = array_map('ucfirst', explode('_', $tableName = $this->getName()));
 
-						$otherTable->addAsRelationSource($other->setRelatedTable($this));
+							$matchedModelTables = array_intersect_key($tablesByModelName, array_flip($modelNames));
+							unset($matchedModelTables[$otherTable->getModelName()]);
+
+							$otherCall->isForMany(true);
+							$otherCall->isForPivotTable(true);
+
+							$call->on = current($matchedModelTables)->getName();
+							$otherTable->addGenericCall($otherCall->setRelatedTable(current($matchedModelTables)));
+						} // if
+						else
+						{
+							$call->setRelatedTable($otherTable);
+							$otherTable->addAsRelationSource($otherCall->setRelatedTable($this));
+						} // else
 					} // if
-				} // foreach#
+				} // foreach
 			} // if
 
 			return $this;
@@ -435,28 +533,21 @@
 		/**
 		 * Saves the table in the given migration file.
 		 * @param string $file
-		 * @param TableMigration[] $otherTables Mapping of the table ids to their names.
 		 * @return bool
 		 */
-		public function save($file, array $otherTables)
+		public function save($file)
 		{
 			$replace = $search = "\$table->increments('id');\n";
 
 			if ($fieldObjects = $this->getFields())
 			{
-				$replace .= implode("\n", $fieldObjects);
+				$replace .= "\t\t\t" . implode("\n\t\t\t", $fieldObjects) . "\n";
 			} // if
 
 			if ($calls = $this->getGenericCalls())
 			{
-				$replace .= "\n" . implode("\n", $calls);
+				$replace .= "\t\t\t" . implode("\n\t\t\t", $calls);
 			} // if
-
-			/** @var TableMigrtion $table */
-			foreach ($otherTables as $id => $table)
-			{
-				$replace = str_replace($id, $table->getName(), $replace);
-			} // foreach
 
 			return (bool) file_put_contents($file, str_replace($search, $replace . "\n", file_get_contents($file)));
 		} // function
