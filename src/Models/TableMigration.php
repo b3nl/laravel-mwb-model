@@ -326,7 +326,7 @@
 		public function getModelName()
 		{
 			$replaces  = ['y'];
-			$searches  = ['/(ies$)/u', '/(es$)/u', '/(s$)/u'];
+			$searches  = ['/(ies$)/u', '/(s$)/u'];
 			$tableName = $modelName = $this->getName();
 
 			foreach ($searches as $index => $search) {
