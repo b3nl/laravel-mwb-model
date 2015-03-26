@@ -79,6 +79,49 @@
 		} // function
 
 		/**
+		 * Creates the migration file for the given table.
+		 * @param TableMigration $table
+		 * @return mixed|string
+		 */
+		protected function createMigrationFile(TableMigration $table)
+		{
+			if ($table->needsLaravelModel())
+			{
+				$this->call('make:model', ['name' => $table->getModelName()]);
+			} // if
+			else
+			{
+				$this->call(
+					'make:migration', ['name' => "create_{$table->getName()}_table", '--create' => $table->getName()]
+				);
+			} // else
+
+			$migrationFiles = glob(
+				$this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$table->getName()}_table.php"
+			);
+
+			return $migrationFiles ? end($migrationFiles) : '';
+		} // function
+
+		/**
+		 * Creates the relations between the tables.
+		 * @param TableMigration[] $tables
+		 * @return TableMigration[]
+		 */
+		protected function createTableRelations($tables)
+		{
+			/** @var TableMigration $tableObject */
+			foreach ($tables as $tableObject)
+			{
+				$tableObject->relateToOtherTables($tables);
+			} // foreach
+
+			uasort($tables, array($this, 'sortTablesWithFKsToEnd'));
+
+			return $tables;
+		} // function
+
+		/**
 		 * Opens the zipped model container and reads the xml model file.
 		 * @return void
 		 */
@@ -156,36 +199,18 @@
 				} // if
 			} // while
 
-			/** @var TableMigration $tableObject */
-			foreach ($tables as $tableName => $tableObject)
-			{
-				$tableObject->relateToOtherTables($tables);
-			} // foreach
+			$tables = $this->createTableRelations($tables);
 
 			/** @var TableMigration $tableObject */
-			foreach ($tables as $tableName => $tableObject)
+			foreach ($tables as $tableObject)
 			{
-				if ($withModel = $tableObject->needsLaravelModel())
+				if ($migrationFile = $this->createMigrationFile($tableObject))
 				{
-					$this->call('make:model', ['name' => $tableObject->getModelName()]);
-				} // if
-				else
-				{
-					$this->call(
-						'make:migration', ['name' => "create_{$tableObject->getName()}_table", '--create' => $tableObject->getName()]
-					);
-				} // else
-
-				$migrationFiles = glob(
-					$this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$tableObject->getName()}_table.php"
-				);
-
-				if ($migrationFiles)
-				{
-					$tableObject->save(end($migrationFiles));
+					$tableObject->save($migrationFile);
 				} // if
 
-				if ($withModel) {
+				if ($tableObject->needsLaravelModel())
+				{
 					$this->saveModelForTable($tableObject);
 				} // if
 			} // foreach
@@ -281,5 +306,56 @@
 			$this->modelReader = $modelReader;
 
 			return $this;
+		} // function
+
+		/**
+		 * Callback to sort tables with foreign keys to the end.
+		 * @param TableMigration $me
+		 * @param TableMigration $other
+		 * @return int
+		 * @todo Works not good enough.
+		 */
+		protected function sortTablesWithFKsToEnd($me, $other)
+		{
+			$myCalls = array_filter($me->getGenericCalls(), function($call) { return isset($call->on); });
+			$otherCalls = array_filter($other->getGenericCalls(), function($call) { return isset($call->on); });
+			$return = 0;
+
+			if ($me->isPivotTable()) {
+				return 1;
+			} // if
+
+			if ($myCalls || $otherCalls)
+			{
+				if ($myCalls)
+				{
+					$otherName = $other->getName();
+
+					foreach ($myCalls as $call)
+					{
+						if (($fkName = (string) $call->on) && ($fkName === $otherName))
+						{
+							$return = 1;
+							break;
+						} // if
+					} // foreach
+				} // if
+
+				if (!$return && $otherCalls)
+				{
+					$myName = $me->getName();
+
+					foreach ($myCalls as $call)
+					{
+						if (($fkName = (string) $call->on) && ($fkName === $myName))
+						{
+							$return = -1;
+							break;
+						} // if
+					} // foreach
+				} // else
+			} // if
+
+			return $return;
 		} // function
 	} // class
