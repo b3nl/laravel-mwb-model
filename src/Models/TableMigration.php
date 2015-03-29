@@ -18,7 +18,7 @@
 
 		/**
 		 * General columns with unspeficied/amobiguous rows.
-		 * @var array
+		 * @var Base[]
 		 */
 		protected $genericCalls = [];
 
@@ -51,12 +51,6 @@
 		 * @var ForeignKey[]
 		 */
 		protected $relationSources = [];
-
-		/**
-		 * Fields which should be skipped by default.
-		 * @var array
-		 */
-		protected $skippedFields = ['created_at', 'id', 'updated_at'];
 
 		/**
 		 * Adds a foreign key, where this table is the source.
@@ -284,6 +278,26 @@
 		} // function
 
 		/**
+		 * Returns the relations for foreign keys.
+		 * @return Base[]
+		 */
+		public function getForeignKeys()
+		{
+			$return = [];
+
+			/** @var Base $call */
+			foreach ($this->getGenericCalls() as $call)
+			{
+				if (isset($call->on))
+				{
+					$return[(string) $call->on] = $call;
+				} // if
+			} // foreach
+
+			return $return;
+		} // function
+
+		/**
 		 * Returns the foreign key fields for a field.
 		 * @param MigrationField $field
 		 * @param \DOMXPath $rootPath
@@ -454,11 +468,6 @@
 				{
 					$fieldName = $rootPath->query('./value[@key="name"]', $field)->item(0)->nodeValue;
 
-					if (in_array($fieldName, $this->skippedFields))
-					{
-						continue;
-					} // if
-
 					$this->addField($fieldName)->load($field, $rootPath);
 				} // foreach
 			} // if
@@ -537,11 +546,29 @@
 		 */
 		public function save($file)
 		{
-			$replace = $search = "\$table->increments('id');\n";
+			$fieldObjects = $this->getFields();
+			$replace = ($search = "\$table->increments('id');\n") . "\t\t\t";
 
-			if ($fieldObjects = $this->getFields())
+			if (@$fieldObjects['id'])
 			{
-				$replace .= "\t\t\t" . implode("\n\t\t\t", $fieldObjects) . "\n";
+				// remove the custom call for the id, because it is laravel default.
+				unset($fieldObjects['id']);
+			} // if
+			else
+			{
+				// or remove the default call, if the field is missing.
+				$replace = '';
+			} // else
+
+			// remove default timestamps
+			if ($withDates = (@$fieldObjects['created_at'] && @$fieldObjects['updated_at']))
+			{
+				unset($fieldObjects['created_at'], $fieldObjects['updated_at']);
+			} // if
+
+			if ($fieldObjects)
+			{
+				$replace .= implode("\n\t\t\t", $fieldObjects) . "\n";
 			} // if
 
 			if ($calls = $this->getGenericCalls())
@@ -549,7 +576,15 @@
 				$replace .= "\t\t\t" . implode("\n\t\t\t", $calls);
 			} // if
 
-			return (bool) file_put_contents($file, str_replace($search, $replace . "\n", file_get_contents($file)));
+			$fileContent = str_replace($search, $replace . "\n", file_get_contents($file));
+
+			if (!$withDates)
+			{
+				// remove the default call if the dates are missing.
+				$fileContent = str_replace("\n\t\t\t\$table->timestamps();\n", '', $fileContent);
+			} // if
+
+			return (bool) file_put_contents($file, $fileContent);
 		} // function
 
 		/**

@@ -60,6 +60,9 @@
 			'dateTime' => [
 				'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.datetime"]'
 			],
+			'increments' => [
+				'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.int"] and ./value[@key="name" and text() = "id"] and ./value[@type="int" and @key="autoIncrement" and number() = 1]'
+			],
 			'integer' => [
 				'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.int"]',
 				[

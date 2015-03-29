@@ -116,9 +116,7 @@
 				$tableObject->relateToOtherTables($tables);
 			} // foreach
 
-			uasort($tables, array($this, 'sortTablesWithFKsToEnd'));
-
-			return $tables;
+			return $this->sortTablesWithFKsToEnd($tables);
 		} // function
 
 		/**
@@ -259,7 +257,8 @@
 				(new ModelContent('\\' . $this->getAppNamespace() . $table->getModelName()))
 					->setTable($table->getName());
 
-			if (array_key_exists($field = 'deleted_at', $fields)) {
+			if (array_key_exists($field = 'deleted_at', $fields))
+			{
 				unset($fields[$field]);
 
 				$modelContent
@@ -310,51 +309,27 @@
 
 		/**
 		 * Callback to sort tables with foreign keys to the end.
-		 * @param TableMigration $me
-		 * @param TableMigration $other
-		 * @return int
-		 * @todo Works not good enough.
+		 * @param TableMigration[] $tables
+		 * @return TableMigration[]
 		 */
-		protected function sortTablesWithFKsToEnd($me, $other)
+		protected function sortTablesWithFKsToEnd(array $tables)
 		{
-			$myCalls = array_filter($me->getGenericCalls(), function($call) { return isset($call->on); });
-			$otherCalls = array_filter($other->getGenericCalls(), function($call) { return isset($call->on); });
-			$return = 0;
+			$return = [];
 
-			if ($me->isPivotTable()) {
-				return 1;
-			} // if
-
-			if ($myCalls || $otherCalls)
+			while ($tables)
 			{
-				if ($myCalls)
+				/** @var TableMigration $table */
+				foreach ($tables as $key => $table)
 				{
-					$otherName = $other->getName();
-
-					foreach ($myCalls as $call)
+					// if there are no fks or the required fks are allready saved.
+					if ((!$fks = $table->getForeignKeys()) || (count(array_intersect_key($return, $fks)) === count($fks)))
 					{
-						if (($fkName = (string) $call->on) && ($fkName === $otherName))
-						{
-							$return = 1;
-							break;
-						} // if
-					} // foreach
-				} // if
-
-				if (!$return && $otherCalls)
-				{
-					$myName = $me->getName();
-
-					foreach ($myCalls as $call)
-					{
-						if (($fkName = (string) $call->on) && ($fkName === $myName))
-						{
-							$return = -1;
-							break;
-						} // if
-					} // foreach
-				} // else
-			} // if
+						$return[$table->getName()] = $table;
+						unset($tables[$key]);
+						continue;
+					} // if
+				} // foreach
+			} // while
 
 			return $return;
 		} // function
