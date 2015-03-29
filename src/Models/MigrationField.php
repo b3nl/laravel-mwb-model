@@ -49,7 +49,6 @@
 			'bigInteger' => [
 				'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.bigint"]',
 				[
-					'number(./value[@type="int" and @key="precision"])',
 					'boolean(./value[@type="int" and @key="autoIncrement" and number() = 1])',
 					'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" and text() = "UNSIGNED"])'
 				]
@@ -66,7 +65,6 @@
 			'integer' => [
 				'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.int"]',
 				[
-					'number(./value[@type="int" and @key="precision"])',
 					'boolean(./value[@type="int" and @key="autoIncrement" and number() = 1])',
 					'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" and text() = "UNSIGNED"])'
 				]
@@ -74,7 +72,6 @@
 			'mediumInteger' => [
 				'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.mediumint"]',
 				[
-					'number(./value[@type="int" and @key="precision"])',
 					'boolean(./value[@type="int" and @key="autoIncrement" and number() = 1])',
 					'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" and text() = "UNSIGNED"])'
 				]
@@ -85,7 +82,13 @@
 			'tinyInteger' => [
 				'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.tinyint"]',
 				[
-					'number(./value[@type="int" and @key="precision"])',
+					'boolean(./value[@type="int" and @key="autoIncrement" and text() = 1])',
+					'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" and text() = "UNSIGNED"])'
+				]
+			],
+			'smallInteger' => [
+				'./link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.smallint"]',
+				[
 					'boolean(./value[@type="int" and @key="autoIncrement" and text() = 1])',
 					'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" and text() = "UNSIGNED"])'
 				]
