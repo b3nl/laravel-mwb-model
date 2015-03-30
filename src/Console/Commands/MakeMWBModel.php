@@ -326,7 +326,6 @@
 					{
 						$return[$table->getName()] = $table;
 						unset($tables[$key]);
-						continue;
 					} // if
 				} // foreach
 			} // while

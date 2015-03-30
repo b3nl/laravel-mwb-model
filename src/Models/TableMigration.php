@@ -284,11 +284,12 @@
 		public function getForeignKeys()
 		{
 			$return = [];
+			$table  = $this->getName();
 
 			/** @var Base $call */
 			foreach ($this->getGenericCalls() as $call)
 			{
-				if (isset($call->on))
+				if (isset($call->on) && $call->on !== $table)
 				{
 					$return[(string) $call->on] = $call;
 				} // if
@@ -546,6 +547,7 @@
 		 */
 		public function save($file)
 		{
+			$name = $this->getName();
 			$fieldObjects = $this->getFields();
 			$replace = ($search = "\$table->increments('id');\n") . "\t\t\t";
 
@@ -571,7 +573,12 @@
 				$replace .= implode("\n\t\t\t", $fieldObjects) . "\n";
 			} // if
 
-			if ($calls = $this->getGenericCalls())
+			// filter every "foreign call" (for m:n tables) to itself.
+			$calls = array_filter($this->getGenericCalls(), function($call) use ($name) {
+				return !$call->foreign || $call->on !== $name;
+			});
+
+			if ($calls)
 			{
 				$replace .= "\t\t\t" . implode("\n\t\t\t", $calls);
 			} // if
