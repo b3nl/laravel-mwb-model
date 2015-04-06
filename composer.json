@@ -21,6 +21,8 @@
         "laravel/framework": "5.0.*",
         "laravel/homestead": "~2.0",
         "phpunit/phpunit": "~4.0",
-        "phpspec/phpspec": "~2.1"
+        "phpspec/phpspec": "~2.1",
+        "pragmarx/laravelcs": "dev-master",
+        "squizlabs/php_codesniffer": "~2.3"
     }
 }
