@@ -2,5 +2,5 @@
 <ruleset name="KBO">
     <file>./src/</file>
 
-    <rule ref="./vendor/pragmarx/laravelcs/Standards/Laravel/ruleset.xml" />
+    <rule ref="PSR2" />
 </ruleset>
