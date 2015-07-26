@@ -1,24 +1,24 @@
-	// {{traits}}
+    // {{traits}}
 
-	/**
-	 * The attributes that should be mutated to dates.
-	 *
-	 * @var array
-	 */
-	protected $dates = {{dates}};
+    /**
+     * The attributes that should be mutated to dates.
+     *
+     * @var array
+     */
+    protected $dates = {{dates}};
 
-	/**
-	 * The attributes that are mass assignable.
-	 *
-	 * @var array
-	 */
-	protected $fillable = {{fillable}};
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array
+     */
+    protected $fillable = {{fillable}};
 
-	/**
-	 * The database table used by the model.
-	 *
-	 * @var string
-	 */
-	protected $table = {{table}};
+    /**
+     * The database table used by the model.
+     *
+     * @var string
+     */
+    protected $table = {{table}};
 
-	// {{relations}}
+    // {{relations}}

@@ -84,7 +84,7 @@ class MakeMWBModel extends BaseCommand
     protected function createMigrationFile(TableMigration $table)
     {
         if ($table->needsLaravelModel()) {
-            $this->call('make:model', ['name' => $table->getModelName()]);
+            $this->call('make:model', ['name' => $table->getModelName(), '--migration' => true]);
         } // if
         else {
             $this->call(
@@ -189,9 +189,9 @@ class MakeMWBModel extends BaseCommand
 
         while ($reader->read()) {
             if ($reader->isModelTable()) {
-                $table = $this->loadModelTable($reader->expand());
-
-                $tables[$table->getId()] = $table;
+                if ($table = $this->loadModelTable($reader->expand())) {
+                    $tables[$table->getId()] = $table;
+                } // if
             } // if
         } // while
 
@@ -214,17 +214,18 @@ class MakeMWBModel extends BaseCommand
     /**
      * Generates the model and migration for/with laravel and extends the contents of the generated classes.
      * @param \DOMNode $node The node of the table.
-     * @return MakeMWBModel
+     * @return MakeMWBModel|bool False if the table should be ignored.
      */
     protected function loadModelTable(\DOMNode $node)
     {
         $tableObject = new TableMigration();
+        $loaded = $tableObject->load($node);
 
-        $tableObject
-            ->load($node)
-            ->isPivotTable($isPivot = in_array($tableObject->getName(), $this->pivotTables));
+        if ($loaded) {
+            $tableObject->isPivotTable($isPivot = in_array($tableObject->getName(), $this->pivotTables));
+        } // if
 
-        return $tableObject;
+        return $loaded ? $tableObject : false;
     } // function
 
     /**

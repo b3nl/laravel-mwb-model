@@ -173,11 +173,41 @@ class ModelContent
     } // function
 
     /**
+     * Parses the given value to an exportable php code.
+     * @param string|array $value
+     * @return string
+     */
+    protected function parsePropertyValue($value)
+    {
+        $return = '';
+
+        if (is_array($value)) {
+            $return =
+                '[' .
+                rtrim(
+                    array_reduce(
+                        $value,
+                        function ($combined, $single) {
+                            return $combined . var_export($single, true) . ', ';
+                        },
+                        ''
+                    ),
+                    ', '
+                ) .
+                ']';
+        } else {
+            $return = var_export($value, true);
+        } // else
+
+        return $return;
+    } // function
+
+    /**
      * Saves the properties in the placeholder.
      * @param string $inPlaceholder
      * @return bool
      */
-    public function save($inPlaceholder = "\t//")
+    public function save($inPlaceholder = "    //")
     {
         try {
             $reflection = new \ReflectionClass($target = $this->getTargetModel());
@@ -211,14 +241,14 @@ class ModelContent
      * @param string $inPlaceholder
      * @return int
      */
-    protected function writeToModel(\ReflectionClass $toModel, $inPlaceholder = "\t//")
+    protected function writeToModel(\ReflectionClass $toModel, $inPlaceholder = "    //")
     {
         $modelFile = $toModel->getFileName();
         $replaces = [];
         $searches = [];
 
         foreach ($this->getProperties() as $property => $content) {
-            $replaces[] = var_export($content, true);
+            $replaces[] = $this->parsePropertyValue($content);
             $searches[] = '{{' . $property . '}}';
         } // foreach
 
@@ -234,12 +264,12 @@ class ModelContent
         } // if
 
         $newContent = str_replace(
-            ["\t// {{relations}}", '// {{traits}}'],
+            ["    // {{relations}}", '// {{traits}}'],
             [$methodContent, ($traits = $this->getTraits()) ? 'use ' . implode(', ', $traits) . ';' : ''],
             $newContent
         );
 
-        return file_put_contents(
+        $written = file_put_contents(
             $modelFile,
             str_replace(
                 $inPlaceholder,
@@ -247,5 +277,12 @@ class ModelContent
                 file_get_contents($modelFile)
             )
         );
+
+        if ($written) {
+            // Success of formatting is optional.
+            @exec("vendor/bin/phpcbf {$modelFile} --standard=PSR2", $output, $return);
+        } // if
+
+        return $written;
     } // function
 }

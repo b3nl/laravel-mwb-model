@@ -36,6 +36,12 @@ class TableMigration implements \Countable
     protected $isPivotTable = false;
 
     /**
+     * The cached model name.
+     * @var string
+     */
+    protected $modelName = '';
+
+    /**
      * The used model node.
      * @var null|\DOMNode
      */
@@ -154,10 +160,14 @@ class TableMigration implements \Countable
         $fetchedNodes = [];
         $fields = $this->getFields();
         $multipleIndices = [];
-        $idMap = array_flip(array_map(function (MigrationField $field) {
-
-            return $field->getId();
-        }, $fields));
+        $idMap = array_flip(
+            array_map(
+                function (MigrationField $field) {
+                    return $field->getId();
+                },
+                $fields
+            )
+        );
 
         /** @var MigrationField $field */
         foreach ($fields as $name => $field) {
@@ -340,19 +350,23 @@ class TableMigration implements \Countable
      */
     public function getModelName()
     {
-        $replaces = ['y'];
-        $searches = ['/(ies$)/u', '/(es$)/u', '/(s$)/u'];
-        $tableName = $modelName = $this->getName();
+        if (!$name = $this->modelName) {
+            $replaces = ['y'];
+            $searches = ['/(ies$)/u', '/(es$)/u', '/(s$)/u'];
+            $tableName = $modelName = $this->getName();
 
-        foreach ($searches as $index => $search) {
-            $modelName = preg_replace($search, @$replaces[$index] ?: '', $modelName, 1, $count);
+            foreach ($searches as $index => $search) {
+                $modelName = preg_replace($search, @$replaces[$index] ?: '', $modelName, 1, $count);
 
-            if ($count) {
-                break;
-            } // if
-        } // foreach
+                if ($count) {
+                    break;
+                } // if
+            } // foreach
 
-        return ucfirst($this->isReservedPHPWord($modelName) ? $tableName : $modelName);
+            $this->setModelName($name = ucfirst($this->isReservedPHPWord($modelName) ? $tableName : $modelName));
+        } // if
+
+        return $name;
     } // function
 
     /**
@@ -493,24 +507,45 @@ class TableMigration implements \Countable
     /**
      * Load this table with its dom node.
      * @param \DOMNode $node
-     * @return TableMigration
+     * @return TableMigration|bool Returns false if the table should be ignored.
      */
     public function load(\DOMNode $node)
     {
+        $return = true;
+
         $dom = new \DOMDocument('1.0');
         $dom->importNode($node, true);
         $dom->appendChild($node);
 
         $path = new \DOMXPath($dom);
 
-        $this->setId($tableId = $node->attributes->getNamedItem('id')->nodeValue);
         $this->setName($tableName = $path->evaluate('string((./value[@key="name"])[1])'));
 
-        if (!$tableId || !$tableName) {
-            throw new \LogicException('Table name or id could not be fond.');
+        $comment = $path->evaluate('string((./value[@key="comment"])[1])');
+
+        if ($comment) {
+            $moreSettings = parse_ini_string($comment) ?: array();
+
+            if (@$ignore = $moreSettings['ignore']) {
+                $return = false;
+            } // if
+
+            if (@$modelName = $moreSettings['model']) {
+                $this->setModelName($modelName);
+            } // if
         } // if
 
-        return $this->loadMigrationFields($path);
+        if ($return) {
+            $this->setId($tableId = $node->attributes->getNamedItem('id')->nodeValue);
+
+            if (!$tableId || !$tableName) {
+                throw new \LogicException('Table name or id could not be fond.');
+            } // if
+
+            $return = $this->loadMigrationFields($path);
+        } // if
+
+        return $return;
     } // function
 
 
@@ -641,7 +676,14 @@ class TableMigration implements \Countable
             $fileContent = str_replace("\n\t\t\t\$table->timestamps();\n", '', $fileContent);
         } // if
 
-        return (bool)file_put_contents($file, $fileContent);
+        $written = (bool) file_put_contents($file, $fileContent);
+
+        if ($written) {
+            // Success of formatting is optional.
+            @exec("vendor/bin/phpcbf {$file} --standard=PSR2", $output, $return);
+        } // if
+
+        return $written;
     } // function
 
     /**
@@ -659,11 +701,23 @@ class TableMigration implements \Countable
     /**
      * Sets the id of this field.
      * @param string $id
-     * @return MigrationField
+     * @return TableMigration
      */
     public function setId($id)
     {
         $this->id = $id;
+
+        return $this;
+    } // function
+
+    /**
+     * Sets the model name.
+     * @param string $name
+     * @return TableMigration
+     */
+    public function setModelName($name)
+    {
+        $this->modelName = $name;
 
         return $this;
     } // function

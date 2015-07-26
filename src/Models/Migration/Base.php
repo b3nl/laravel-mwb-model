@@ -93,8 +93,27 @@ class Base
             $fieldMigration .= $this->getStartPoint();
 
             $paramParser = function ($value) {
-                
-                return var_export($value, true);
+                $return = '';
+
+                if (is_array($value)) {
+                    $return =
+                        '[' .
+                        rtrim(
+                            array_reduce(
+                                $value,
+                                function ($combined, $single) {
+                                    return $combined . var_export($single, true) . ', ';
+                                },
+                                ''
+                            ),
+                            ', '
+                        ) .
+                        ']';
+                } else {
+                    $return = var_export($value, true);
+                } // else
+
+                return $return;
             };
 
             foreach ($migrations as $method => $params) {

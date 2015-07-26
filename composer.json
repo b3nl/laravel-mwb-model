@@ -2,7 +2,7 @@
     "authors": [
         {
             "name": "Bjoern Lange",
-            "email": "github@b3nl.de"
+            "email": "code@b3nl.de"
         }
     ],
     "autoload": {
@@ -15,12 +15,12 @@
     "minimum-stability": "dev",
     "name": "b3nl/laravel-mwb-model",
     "require": {
-        "php": ">= 5.5.9"
+        "laravel/framework": "~5.1",
+        "php": ">= 5.5.9",
+        "squizlabs/php_codesniffer": "~2.3"
     },
     "require-dev": {
-        "laravel/framework": "5.1.*",
         "phpunit/phpunit": "~4.0",
-        "phpspec/phpspec": "~2.1",
-        "squizlabs/php_codesniffer": "~2.3"
+        "phpspec/phpspec": "~2.1"
     }
 }
