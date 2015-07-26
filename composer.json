@@ -15,14 +15,12 @@
     "minimum-stability": "dev",
     "name": "b3nl/laravel-mwb-model",
     "require": {
-        "php": ">= 5.4.0"
+        "php": ">= 5.5.9"
     },
     "require-dev": {
-        "laravel/framework": "5.0.*",
-        "laravel/homestead": "~2.0",
+        "laravel/framework": "5.1.*",
         "phpunit/phpunit": "~4.0",
         "phpspec/phpspec": "~2.1",
-        "pragmarx/laravelcs": "dev-master",
         "squizlabs/php_codesniffer": "~2.3"
     }
 }
