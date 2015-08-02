@@ -133,6 +133,12 @@ class ModelContent
                         ');';
                 } // else
 
+                $methodName = preg_replace_callback(
+                    '/(_[a-z])/',
+                    function($matches) { return strtoupper(substr($matches[0], 1)); },
+                    $methodName
+                );
+
                 $method = "\t/**\n\t * Getter for {$relatedTable->getName()}.\n\t " .
                     "* @return \\Illuminate\\Database\\Eloquent\\Relations\\" .
                     ucfirst($methodReturnSuffix) . " \n\t */\n\t" .

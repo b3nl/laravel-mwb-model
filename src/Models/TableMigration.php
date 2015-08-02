@@ -526,12 +526,16 @@ class TableMigration implements \Countable
         if ($comment) {
             $moreSettings = parse_ini_string($comment) ?: array();
 
-            if (@$ignore = $moreSettings['ignore']) {
+            if (@$moreSettings['ignore']) {
                 $return = false;
             } // if
 
             if (@$modelName = $moreSettings['model']) {
                 $this->setModelName($modelName);
+            } // if
+
+            if (@$moreSettings['isPivot']) {
+                $this->isPivotTable(true);
             } // if
         } // if
 

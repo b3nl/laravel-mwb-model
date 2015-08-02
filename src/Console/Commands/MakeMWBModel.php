@@ -221,9 +221,11 @@ class MakeMWBModel extends BaseCommand
         $tableObject = new TableMigration();
         $loaded = $tableObject->load($node);
 
-        if ($loaded) {
-            $tableObject->isPivotTable($isPivot = in_array($tableObject->getName(), $this->pivotTables));
-        } // if
+        if ($loaded && in_array($tableObject->getName(), $this->pivotTables)) {
+            $tableObject->isPivotTable(true);
+        } else if ($tableObject->isPivotTable()) {
+            $this->pivotTables[] = $tableObject->getName();
+        } // else if
 
         return $loaded ? $tableObject : false;
     } // function
@@ -248,6 +250,7 @@ class MakeMWBModel extends BaseCommand
      */
     protected function saveModelForTable(TableMigration $table)
     {
+        $dates = [];
         $fields = $table->getFields();
         $modelContent =
             (new ModelContent('\\' . $this->getAppNamespace() . $table->getModelName()))
@@ -256,11 +259,27 @@ class MakeMWBModel extends BaseCommand
         if (array_key_exists($field = 'deleted_at', $fields)) {
             unset($fields[$field]);
 
-            $modelContent
-                ->setDates(['deleted_at'])
-                ->setTraits(['\Illuminate\Database\Eloquent\SoftDeletes']);
+            $dates[] = $field;
+            $modelContent->setTraits(['\Illuminate\Database\Eloquent\SoftDeletes']);
         } // if
 
+        if (array_key_exists($field = 'created_at', $fields)) {
+            unset($fields[$field]);
+
+            $dates[] = $field;
+        } // if
+
+        if (array_key_exists($field = 'updated_at', $fields)) {
+            unset($fields[$field]);
+
+            $dates[] = $field;
+        } // if
+
+        if ($dates) {
+            $modelContent->setDates($dates);
+        } // if
+
+        unset($fields['id']);
         $modelContent->setFillable(array_keys($fields));
 
         if ($genericCalls = $table->getGenericCalls()) {
