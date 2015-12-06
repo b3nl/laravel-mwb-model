@@ -1,4 +1,5 @@
-<?php namespace b3nl\MWBModel\Console\Commands;
+<?php
+namespace b3nl\MWBModel\Console\Commands;
 
 use b3nl\MWBModel\MWBModelReader;
 use b3nl\MWBModel\Models\Migration\ForeignKey;
@@ -280,7 +281,8 @@ class MakeMWBModel extends BaseCommand
         } // if
 
         unset($fields['id']);
-        $modelContent->setFillable(array_keys($fields));
+        $modelContent->setFillable(array_diff(array_keys($fields), $table->getBlacklist()));
+        $modelContent->setCasts($table->getCastedFields());
 
         if ($genericCalls = $table->getGenericCalls()) {
             foreach ($genericCalls as $call) {

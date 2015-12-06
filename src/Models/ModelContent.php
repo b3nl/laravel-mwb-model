@@ -1,9 +1,14 @@
-<?php namespace b3nl\MWBModel\Models;
+<?php
+namespace b3nl\MWBModel\Models;
 
 use b3nl\MWBModel\Models\Migration\ForeignKey;
+use LogicException;
+use ReflectionClass;
+use ReflectionException;
 
 /**
  * Saves content in the model stub.
+ * @method ModelContent setCasts() setCasts(array $casts) Sets the casting fields.
  * @method ModelContent setDates() setDates(array $dates) Sets the dates fields.
  * @method ModelContent setFillable() setFillable(array $fillable) Sets the fillable fields.
  * @method ModelContent setTable() setTable(string $table) Sets the table name.
@@ -24,6 +29,7 @@ class ModelContent
      * @var array
      */
     protected $properties = [
+        'casts' => [],
         'dates' => [],
         'fillable' => [],
         'table' => ''
@@ -88,10 +94,10 @@ class ModelContent
 
     /**
      * Returns the parsed method calls for the foreign keys.
-     * @param \ReflectionClass $toModel
+     * @param ReflectionClass $toModel
      * @return array
      */
-    protected function getMethodCallsForForeignKeys(\ReflectionClass $toModel)
+    protected function getMethodCallsForForeignKeys(ReflectionClass $toModel)
     {
         $methods = [];
 
@@ -135,7 +141,9 @@ class ModelContent
 
                 $methodName = preg_replace_callback(
                     '/(_[a-z])/',
-                    function($matches) { return strtoupper(substr($matches[0], 1)); },
+                    function ($matches) {
+                        return strtoupper(substr($matches[0], 1));
+                    },
                     $methodName
                 );
 
@@ -188,19 +196,29 @@ class ModelContent
         $return = '';
 
         if (is_array($value)) {
-            $return =
-                '[' .
-                rtrim(
-                    array_reduce(
-                        $value,
-                        function ($combined, $single) {
-                            return $combined . var_export($single, true) . ', ';
-                        },
-                        ''
-                    ),
-                    ', '
-                ) .
-                ']';
+            $withStringIndex = (bool) array_filter(array_keys($value), 'is_string');
+
+            if ($withStringIndex) {
+                $return = preg_replace(
+                    ['/^(array ?\( *)/', '/\)$/'],
+                    ['[', ']'],
+                    str_replace("\n", '', var_export($value, true))
+                );
+            } else {
+                $return =
+                    '[' .
+                    rtrim(
+                        array_reduce(
+                            $value,
+                            function ($combined, $single) {
+                                return $combined . var_export($single, true) . ', ';
+                            },
+                            ''
+                        ),
+                        ', '
+                    ) .
+                    ']';
+            } // else
         } else {
             $return = var_export($value, true);
         } // else
@@ -212,15 +230,16 @@ class ModelContent
      * Saves the properties in the placeholder.
      * @param string $inPlaceholder
      * @return bool
+     * @throws LogicException
      */
     public function save($inPlaceholder = "    //")
     {
         try {
-            $reflection = new \ReflectionClass($target = $this->getTargetModel());
+            $reflection = new ReflectionClass($target = $this->getTargetModel());
 
             $this->writeToModel($reflection, $inPlaceholder);
-        } catch (\ReflectionException $exc) {
-            throw new \LogicException(sprintf(
+        } catch (ReflectionException $exc) {
+            throw new LogicException(sprintf(
                 'Model %s not found',
                 is_object($target) ? get_class($target) : $target
             ));
@@ -247,7 +266,7 @@ class ModelContent
      * @param string $inPlaceholder
      * @return int
      */
-    protected function writeToModel(\ReflectionClass $toModel, $inPlaceholder = "    //")
+    protected function writeToModel(ReflectionClass $toModel, $inPlaceholder = "    //")
     {
         $modelFile = $toModel->getFileName();
         $replaces = [];

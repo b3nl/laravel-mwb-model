@@ -16,10 +16,15 @@ php artisan make:mwb-model $FILE_TO_SAVED_MODEL --pivots=$COMMA_SEPARATED_LIST_O
 You can comment your tables in the MySQL-Workbrench with an [ini-String](http://php.net/manual/de/function.parse-ini-string.php) with the following options:
 
 ```
-; With this comments, this table is ignored for parsing. Leave it out, if you do not want it ignored.
+; With this comment, this table is ignored for parsing. Leave it out, if you do not want it ignored.
 ignore=true
 ; Name of the Laravel model 
 model=Name
 ; Is this a pivot table? Leave it out if not.
 isPivot=true
+; withoutTimestamps removes the default timestamps() call for the database migrations
+withoutTimestamps=true
+; Ini-Array for the laravel model castings: http://laravel.com/docs/5.1/eloquent-mutators#attribute-casting
+[casting]
+values=array
 ``` 

@@ -1,6 +1,12 @@
     // {{traits}}
 
     /**
+     * Which values should be casted?
+     * @var array
+     */
+    protected $casts = {{casts}};
+
+    /**
      * The attributes that should be mutated to dates.
      *
      * @var array

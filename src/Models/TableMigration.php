@@ -1,7 +1,13 @@
-<?php namespace b3nl\MWBModel\Models;
+<?php
+
+namespace b3nl\MWBModel\Models;
 
 use b3nl\MWBModel\Models\Migration\Base;
 use b3nl\MWBModel\Models\Migration\ForeignKey;
+use Countable;
+use DOMNode;
+use DOMNodeList;
+use DOMXPath;
 
 /**
  * Class to prepare the table for the laravel migrations.
@@ -9,8 +15,20 @@ use b3nl\MWBModel\Models\Migration\ForeignKey;
  * @subpackage Models
  * @version $id$
  */
-class TableMigration implements \Countable
+class TableMigration implements Countable
 {
+    /**
+     * The guarded fields.
+     * @var array
+     */
+    protected $blacklist = [];
+
+    /**
+     * Maps field names to casting types.
+     * @var array
+     */
+    protected $castedFields = [];
+
     /**
      * Caching of the database fields.
      * @var MigrationField[]
@@ -60,6 +78,12 @@ class TableMigration implements \Countable
     protected $relationSources = [];
 
     /**
+     * Should this table write the timestamps call?
+     * @var bool
+     */
+    protected $withoutTimestamps = false;
+
+    /**
      * Adds a foreign key, where this table is the source.
      * @param ForeignKey $foreignKey
      * @return TableMigration
@@ -86,10 +110,10 @@ class TableMigration implements \Countable
 
     /**
      * Adds the foreign keys to the field.
-     * @param \DOMXPath $rootPath
+     * @param DOMXPath $rootPath
      * @return TableMigration
      */
-    protected function addForeignKeys(\DOMXPath $rootPath)
+    protected function addForeignKeys(DOMXPath $rootPath)
     {
         $fields = $this->getFields();
         $idMap = array_flip(array_map(function (MigrationField $field) {
@@ -151,11 +175,11 @@ class TableMigration implements \Countable
 
     /**
      * Adds the simple indices to the fields directly and returns the indices for multiple values.
-     * @param \DOMXPath $rootPath
+     * @param DOMXPath $rootPath
      * @return array
      * @todo   Primary missing; Problems with m:ns.
      */
-    protected function addIndicesToFields(\DOMXPath $rootPath)
+    protected function addIndicesToFields(DOMXPath $rootPath)
     {
         $fetchedNodes = [];
         $fields = $this->getFields();
@@ -271,6 +295,36 @@ class TableMigration implements \Countable
     } // function
 
     /**
+     * Returns the guarded fields.
+     * @return array
+     */
+    public function getBlacklist()
+    {
+        return $this->blacklist;
+    }
+
+    /**
+     * Returns the casted fields.
+     * @return array
+     */
+    public function getCastedFields()
+    {
+        return $this->castedFields;
+    } // function
+
+    /**
+     * Sets the casted fields for this table.
+     * @param array $castedFields
+     * @return TableMigration
+     */
+    public function setCastedFields(array $castedFields)
+    {
+        $this->castedFields = $castedFields;
+
+        return $this;
+    } // function
+
+    /**
      * Returns the field with the given name
      * @param string $name
      * @return null
@@ -311,10 +365,10 @@ class TableMigration implements \Countable
     /**
      * Returns the foreign key fields for a field.
      * @param MigrationField $field
-     * @param \DOMXPath $rootPath
-     * @return \DOMNodeList
+     * @param DOMXPath $rootPath
+     * @return DOMNodeList
      */
-    protected function getForeignKeysForField(MigrationField $field, \DOMXPath $rootPath)
+    protected function getForeignKeysForField(MigrationField $field, DOMXPath $rootPath)
     {
         return $rootPath->query(
             './value[@content-struct-name="db.mysql.ForeignKey" and @key="foreignKeys"]/' .
@@ -506,10 +560,10 @@ class TableMigration implements \Countable
 
     /**
      * Load this table with its dom node.
-     * @param \DOMNode $node
+     * @param DOMNode $node
      * @return TableMigration|bool Returns false if the table should be ignored.
      */
-    public function load(\DOMNode $node)
+    public function load(DOMNode $node)
     {
         $return = true;
 
@@ -524,19 +578,7 @@ class TableMigration implements \Countable
         $comment = $path->evaluate('string((./value[@key="comment"])[1])');
 
         if ($comment) {
-            $moreSettings = parse_ini_string($comment) ?: array();
-
-            if (@$moreSettings['ignore']) {
-                $return = false;
-            } // if
-
-            if (@$modelName = $moreSettings['model']) {
-                $this->setModelName($modelName);
-            } // if
-
-            if (@$moreSettings['isPivot']) {
-                $this->isPivotTable(true);
-            } // if
+            $return = $this->loadAnnotations($comment);
         } // if
 
         if ($return) {
@@ -552,13 +594,39 @@ class TableMigration implements \Countable
         return $return;
     } // function
 
+    /**
+     * Loads the annotations for this table.
+     * @param string $annotations
+     * @return bool Returns false, if this table should be ignored.
+     */
+    public function loadAnnotations($annotations)
+    {
+        $moreSettings = parse_ini_string($annotations, true) ?: array();
+
+        if (@$guardedFields = $moreSettings['blacklist']) {
+            $this->setBlacklist(explode(',', $guardedFields));
+        } // if
+
+        if (@$moreSettings['casting'] && is_array($moreSettings['casting'])) {
+            $this->setCastedFields($moreSettings['casting']);
+        } // if
+
+        if (@$modelName = $moreSettings['model']) {
+            $this->setModelName($modelName);
+        } // if
+
+        $this->isPivotTable(@ (bool)$moreSettings['isPivot']);
+        $this->withoutTimestamps(@ (bool)$moreSettings['withoutTimestamps']);
+
+        return !@$moreSettings['ignore'];
+    }
 
     /**
      * Returns the migration fields of the model.
-     * @param \DOMXPath $rootPath
+     * @param DOMXPath $rootPath
      * @return TableMigration
      */
-    protected function loadMigrationFields(\DOMXPath $rootPath)
+    protected function loadMigrationFields(DOMXPath $rootPath)
     {
         $fields = $rootPath->query(
             './value[@type="list" and @key="columns"]/value[@type="object" and @struct-name="db.mysql.Column"]'
@@ -675,12 +743,12 @@ class TableMigration implements \Countable
 
         $fileContent = str_replace($search, $replace . "\n", file_get_contents($file));
 
-        if (!$withDates) {
+        if (!$withDates || $this->withoutTimestamps()) {
             // remove the default call if the dates are missing.
             $fileContent = str_replace("\n\t\t\t\$table->timestamps();\n", '', $fileContent);
         } // if
 
-        $written = (bool) file_put_contents($file, $fileContent);
+        $written = (bool)file_put_contents($file, $fileContent);
 
         if ($written) {
             // Success of formatting is optional.
@@ -688,6 +756,18 @@ class TableMigration implements \Countable
         } // if
 
         return $written;
+    } // function
+
+    /**
+     * Sets the guarded fields.
+     * @param array $blacklist
+     * @return TableMigration.
+     */
+    public function setBlacklist(array $blacklist)
+    {
+        $this->blacklist = $blacklist;
+
+        return $this;
     } // function
 
     /**
@@ -737,4 +817,20 @@ class TableMigration implements \Countable
 
         return $this;
     } // function
+
+    /**
+     * Should this table be rendered without the timestamps?
+     * @param bool $newStatus
+     * @return bool
+     */
+    public function withoutTimestamps($newStatus = false)
+    {
+        $oldStatus = $this->withoutTimestamps;
+
+        if (func_num_args()) {
+            $this->withoutTimestamps = $newStatus;
+        } // if
+
+        return $oldStatus;
+    }
 }
