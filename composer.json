@@ -15,7 +15,7 @@
     "minimum-stability": "dev",
     "name": "b3nl/laravel-mwb-model",
     "require": {
-        "laravel/framework": "~5.1",
+        "laravel/framework": "5.1 - 5.2",
         "php": ">= 5.5.9",
         "squizlabs/php_codesniffer": "~2.3"
     },
