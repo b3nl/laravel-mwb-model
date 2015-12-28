@@ -56,7 +56,7 @@ class MigrationField extends Base
             ]
         ],
         'softDeletes' => [
-            './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.datetime"]/../value[@key="name" ' .
+            './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.datetime" or text() = "com.mysql.rdbms.mysql.datatype.timestamp_f"]/../value[@key="name" ' .
                 'and text() = "deleted_at"]'
         ],
         'dateTime' => [
@@ -85,6 +85,9 @@ class MigrationField extends Base
         'text' => [
             './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.text"]'
         ],
+        'timestamp' => [
+            './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.timestamp_f"]'
+        ],
         'tinyInteger' => [
             './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.tinyint"]',
             [
@@ -92,6 +95,10 @@ class MigrationField extends Base
                 'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" ' .
                     'and text() = "UNSIGNED"])'
             ]
+        ],
+        'rememberToken' => [
+            './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.varchar"]/../value[@key="name" ' .
+            'and text() = "remember_token"]'
         ],
         'smallInteger' => [
             './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.smallint"]',
