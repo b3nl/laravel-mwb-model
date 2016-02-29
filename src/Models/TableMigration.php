@@ -5,6 +5,7 @@ namespace b3nl\MWBModel\Models;
 use b3nl\MWBModel\Models\Migration\Base;
 use b3nl\MWBModel\Models\Migration\ForeignKey;
 use Countable;
+use Doctrine\Common\Inflector\Inflector;
 use DOMNode;
 use DOMNodeList;
 use DOMXPath;
@@ -405,17 +406,13 @@ class TableMigration implements Countable
     public function getModelName()
     {
         if (!$name = $this->modelName) {
-            $replaces = ['y'];
-            $searches = ['/(ies$)/u', '/(es$)/u', '/(s$)/u'];
-            $tableName = $modelName = $this->getName();
+            $tableName = $this->getName();
 
-            foreach ($searches as $index => $search) {
-                $modelName = preg_replace($search, @$replaces[$index] ?: '', $modelName, 1, $count);
-
-                if ($count) {
-                    break;
-                } // if
-            } // foreach
+            $modelNames = [];
+            foreach(explode('_', $tableName) as $word) {
+                $modelNames[] = Inflector::singularize($word);
+            } //foreach
+            $modelName = implode('_', $modelNames);
 
             $this->setModelName($name = ucfirst($this->isReservedPHPWord($modelName) ? $tableName : $modelName));
         } // if
