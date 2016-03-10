@@ -2,9 +2,9 @@
 namespace b3nl\MWBModel\Models;
 
 use b3nl\MWBModel\Models\Migration\ForeignKey;
+use Illuminate\Console\AppNamespaceDetectorTrait;
 use LogicException;
 use ReflectionClass;
-use ReflectionException;
 
 /**
  * Saves content in the model stub.
@@ -18,6 +18,8 @@ use ReflectionException;
  */
 class ModelContent
 {
+    use AppNamespaceDetectorTrait;
+
     /**
      * Strings which should be added additionally.
      * @var ForeignKey[]
@@ -94,10 +96,9 @@ class ModelContent
 
     /**
      * Returns the parsed method calls for the foreign keys.
-     * @param ReflectionClass $toModel
      * @return array
      */
-    protected function getMethodCallsForForeignKeys(ReflectionClass $toModel)
+    protected function getMethodCallsForForeignKeys()
     {
         $methods = [];
 
@@ -105,38 +106,31 @@ class ModelContent
             /** @var ForeignKey $key */
             foreach ($keys as $key) {
                 $relatedTable = $key->getRelatedTable();
+                $relatedModel = '\\' . $this->getAppNamespace() . $relatedTable->getModelName() . '::class';
 
                 if ($key->isSource()) {
-                    $methodName = strtolower(
-                        $key->isForMany() ? $relatedTable->getName() : $relatedTable->getModelName()
-                    );
+                    $methodName = lcfirst($key->isForMany() ? $relatedTable->getName() : $relatedTable->getModelName());
 
                     $methodReturnSuffix = 'has' . ($key->isForMany() ? 'Many' : 'One');
-                    $methodContent = "return \$this->{$methodReturnSuffix}(" .
-                        "'{$toModel->getNamespaceName()}\\{$relatedTable->getModelName()}'" .
-                        ');';
+                    $methodContent = "return \$this->{$methodReturnSuffix}({$relatedModel});";
                 } // if
                 elseif ($key->isForPivotTable()) {
-                    $methodName = strtolower($key->isForMany() && $key->isForPivotTable()
+                    $methodName = lcfirst($key->isForMany() && $key->isForPivotTable()
                         ? $relatedTable->getName()
                         : $relatedTable->getModelName());
 
                     $methodReturnSuffix = 'belongsToMany';
 
-                    $methodContent = "return \$this->{$methodReturnSuffix}(" .
-                        "'{$toModel->getNamespaceName()}\\{$relatedTable->getModelName()}'" .
-                        ');';
+                    $methodContent = "return \$this->{$methodReturnSuffix}({$relatedModel});";
                 } // elseif
                 else {
-                    $methodName = strtolower($key->isForMany() && $key->isForPivotTable()
+                    $methodName = lcfirst($key->isForMany() && $key->isForPivotTable()
                         ? $relatedTable->getName()
                         : $relatedTable->getModelName());
 
                     $methodReturnSuffix = 'belongsTo';
 
-                    $methodContent = "return \$this->{$methodReturnSuffix}(" .
-                        "'{$toModel->getNamespaceName()}\\{$relatedTable->getModelName()}', '{$key->foreign}'" .
-                        ');';
+                    $methodContent = "return \$this->{$methodReturnSuffix}({$relatedModel}, '{$key->foreign}');";
                 } // else
 
                 $methodName = preg_replace_callback(
@@ -150,7 +144,7 @@ class ModelContent
                 $method = "\t/**\n\t * Getter for {$relatedTable->getName()}.\n\t " .
                     "* @return \\Illuminate\\Database\\Eloquent\\Relations\\" .
                     ucfirst($methodReturnSuffix) . " \n\t */\n\t" .
-                    "public function {$methodName}()\n\t{\n\t\t{$methodContent}\n\t} // function";
+                    "public function {$methodName}()\n\t{\n\t\t{$methodContent}\n\t}";
 
                 $methods[] = $method;
             } // foreach
@@ -234,16 +228,11 @@ class ModelContent
      */
     public function save($inPlaceholder = "    //")
     {
-        try {
-            $reflection = new ReflectionClass($target = $this->getTargetModel());
+        if (!file_exists($modelFile = app_path($target = $this->getTargetModel(). '.php'))) {
+            throw new LogicException(sprintf('Model %s not found', $target));
+        }
 
-            $this->writeToModel($reflection, $inPlaceholder);
-        } catch (ReflectionException $exc) {
-            throw new LogicException(sprintf(
-                'Model %s not found',
-                is_object($target) ? get_class($target) : $target
-            ));
-        } // catch
+        $this->writeToModel($modelFile, $inPlaceholder);
 
         return true;
     } // function
@@ -262,13 +251,12 @@ class ModelContent
 
     /**
      * Writes the stub properties to the target model.
-     * @param \ReflectionClass $toModel The reflection of the target model.
+     * @param string $modelFile The path to the model file.
      * @param string $inPlaceholder
      * @return int
      */
-    protected function writeToModel(ReflectionClass $toModel, $inPlaceholder = "    //")
+    protected function writeToModel($modelFile, $inPlaceholder = "    //")
     {
-        $modelFile = $toModel->getFileName();
         $replaces = [];
         $searches = [];
 
@@ -285,7 +273,7 @@ class ModelContent
         );
 
         if ($keys = $this->getForeignKeys()) {
-            $methodContent = implode("\n\n", $this->getMethodCallsForForeignKeys($toModel));
+            $methodContent = implode("\n\n", $this->getMethodCallsForForeignKeys());
         } // if
 
         $newContent = str_replace(
@@ -305,7 +293,13 @@ class ModelContent
 
         if ($written) {
             // Success of formatting is optional.
-            @exec("vendor/bin/phpcbf {$modelFile} --standard=PSR2", $output, $return);
+            if (DIRECTORY_SEPARATOR === '\\') {
+                $exec = ".\\vendor\\bin\\phpcbf.bat {$modelFile} --standard=PSR2";
+            } else {
+                $exec = "vendor/bin/phpcbf {$modelFile} --standard=PSR2";
+            }
+
+            @exec($exec, $output, $return);
         } // if
 
         return $written;

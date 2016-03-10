@@ -2,6 +2,7 @@
 
 namespace b3nl\MWBModel\Models;
 
+use Artisan;
 use b3nl\MWBModel\Models\Migration\Base;
 use b3nl\MWBModel\Models\Migration\ForeignKey;
 use Countable;
@@ -9,6 +10,8 @@ use Doctrine\Common\Inflector\Inflector;
 use DOMNode;
 use DOMNodeList;
 use DOMXPath;
+use Illuminate\Console\Command;
+use Illuminate\Console\AppNamespaceDetectorTrait;
 
 /**
  * Class to prepare the table for the laravel migrations.
@@ -18,6 +21,8 @@ use DOMXPath;
  */
 class TableMigration implements Countable
 {
+    use AppNamespaceDetectorTrait;
+
     /**
      * The guarded fields.
      * @var array
@@ -29,6 +34,12 @@ class TableMigration implements Countable
      * @var array
      */
     protected $castedFields = [];
+
+    /**
+     * The issueing command.
+     * @var Command|void
+     */
+    protected $command = null;
 
     /**
      * Caching of the database fields.
@@ -85,6 +96,15 @@ class TableMigration implements Countable
     protected $withoutTimestamps = false;
 
     /**
+     * The constructor.
+     * @param Command $command
+     */
+    public function __construct(Command $command)
+    {
+        $this->setCommand($command);
+    }
+
+    /**
      * Adds a foreign key, where this table is the source.
      * @param ForeignKey $foreignKey
      * @return TableMigration
@@ -96,6 +116,37 @@ class TableMigration implements Countable
 
         return $this;
     } // function
+
+    protected function addCallsToMigrationFile($file)
+    {
+        $name = $this->getName();
+        $written = false;
+
+        // filter every "foreign call" (for m:n tables) to itself.
+        $calls = array_filter($this->getGenericCalls(), function ($call) use ($name) {
+            return !$call->foreign || $call->on !== $name;
+        });
+
+        if ($calls) {
+            $search = '            $table->timestamps();' . "\n";
+            $replace = "\t\t\t" . implode("\n\t\t\t", $calls);
+
+            $written = (bool)file_put_contents($file, str_replace($search, $replace . "\n", file_get_contents($file)));
+
+            if ($written) {
+                if (DIRECTORY_SEPARATOR === '\\') {
+                    $exec = ".\\vendor\\bin\\phpcbf.bat {$file} --standard=PSR2";
+                } else {
+                    $exec = "vendor/bin/phpcbf {$file} --standard=PSR2";
+                }
+
+                // Success of formatting is optional.
+                @exec($exec, $output, $return);
+            }
+        }
+
+        return $written;
+    }
 
     /**
      * Adds a field for the given name.
@@ -118,7 +169,6 @@ class TableMigration implements Countable
     {
         $fields = $this->getFields();
         $idMap = array_flip(array_map(function (MigrationField $field) {
-
             return $field->getId();
         }, $fields));
 
@@ -233,7 +283,7 @@ class TableMigration implements Countable
                     )
                     ) {
                         if ($isSingleColumn) {
-                            $field->unique();
+                            $field->addAdditionalOption('unique');
                         } // if
                         else {
                             $genericMethod = 'unique';
@@ -247,7 +297,7 @@ class TableMigration implements Countable
 
                     if ($hasIndex && (!$fks || !$fks->length)) {
                         if ($isSingleColumn) {
-                            $field->index();
+                            $field->addAdditionalOption('index');
                         } // if
                         else {
                             $genericMethod = 'index';
@@ -260,7 +310,7 @@ class TableMigration implements Countable
                     )
                     ) {
                         if ($isSingleColumn) {
-                            $field->primary();
+                            $field->addAdditionalOption('primary');
                         } // if
                         else {
                             $genericMethod = 'primary';
@@ -269,7 +319,7 @@ class TableMigration implements Countable
 
                     if ($genericCall && $genericMethod) {
                         $genericParams = [];
-                        /** @var \DOMNode $column */
+                        /** @var DOMNode $column */
                         foreach ($indexColumns as $column) {
                             $genericParams[] = $idMap[$column->nodeValue];
                         } // foreach
@@ -278,13 +328,13 @@ class TableMigration implements Countable
                             [$genericCall, $genericMethod],
                             $genericParams ? [$genericParams] : []
                         ));
-                    } // if
-                } // foreach
-            } // if
-        } // foreach
+                    }
+                }
+            }
+        }
 
         return array_unique($multipleIndices);
-    } // function
+    }
 
     /**
      * Returns the count of fields.
@@ -293,6 +343,66 @@ class TableMigration implements Countable
     public function count()
     {
         return count($this->fields);
+    } // function
+
+    /**
+     * Creates the migration file for the given table.
+     * @return mixed|string
+     * @todo softDeletes, timestamps
+     */
+    protected function createMigrationFile()
+    {
+        $fieldObjects = $this->getFields();
+
+        if (@$fieldObjects['id']) {
+            unset($fieldObjects['id']);
+        }
+
+        if (@$fieldObjects['created_at'] && @$fieldObjects['updated_at']) {
+            $this->addGenericCall((new Base())->timestamps());
+
+            unset($fieldObjects['created_at'], $fieldObjects['updated_at']);
+        } // if
+
+        if (@$fieldObjects['deleted_at']) {
+            $this->addGenericCall((new Base())->softDeletes());
+
+            unset($fieldObjects['deleted_at']);
+        } // if
+
+        $schema = implode(', ', $fieldObjects);
+
+        if (strpos($schema, 'enum') !== false) {
+            $this->getCommand()->info(sprintf('Please change the enum field of table "%s" manually.',
+                $this->getName()));
+        }
+
+        if ($this->isPivotTable()) {
+            $tables = array_keys($this->getForeignKeys());
+
+            Artisan::call(
+                'make:migration:pivot',
+                [
+                    'tableOne' => $tables[0],
+                    'tableTwo' => $tables[1]
+                ]
+            );
+        } else {
+            Artisan::call(
+                'make:migration:schema',
+                [
+                    'name' => "create_{$this->getName()}_table",
+                    '--model' => $this->needsLaravelModel(),
+                    '--schema' => $fieldObjects ? $schema : ''
+                ]
+            );
+
+            $migrationFiles = glob(
+                database_path('migrations') . DIRECTORY_SEPARATOR . "*_create_{$this->getName()}_table.php"
+            );
+        }
+
+        return @$migrationFiles ? end($migrationFiles) : '';
     } // function
 
     /**
@@ -311,19 +421,16 @@ class TableMigration implements Countable
     public function getCastedFields()
     {
         return $this->castedFields;
-    } // function
+    }
 
     /**
-     * Sets the casted fields for this table.
-     * @param array $castedFields
-     * @return TableMigration
+     * Returns Sets the issueing command.
+     * @return Command
      */
-    public function setCastedFields(array $castedFields)
+    public function getCommand()
     {
-        $this->castedFields = $castedFields;
-
-        return $this;
-    } // function
+        return $this->command;
+    }
 
     /**
      * Returns the field with the given name
@@ -409,10 +516,10 @@ class TableMigration implements Countable
             $tableName = $this->getName();
 
             $modelNames = [];
-            foreach(explode('_', $tableName) as $word) {
+            foreach (explode('_', $tableName) as $word) {
                 $modelNames[] = Inflector::singularize($word);
             } //foreach
-            $modelName = implode('_', $modelNames);
+            $modelName = implode('', $modelNames);
 
             $this->setModelName($name = ucfirst($this->isReservedPHPWord($modelName) ? $tableName : $modelName));
         } // if
@@ -598,7 +705,7 @@ class TableMigration implements Countable
      */
     public function loadAnnotations($annotations)
     {
-        $moreSettings = parse_ini_string($annotations, true) ?: array();
+        $moreSettings = parse_ini_string($annotations, true) ?: [];
 
         if (@$guardedFields = $moreSettings['blacklist']) {
             $this->setBlacklist(explode(',', $guardedFields));
@@ -671,7 +778,7 @@ class TableMigration implements Countable
             foreach ($calls as $call) {
                 if ($on = $call->on) {
                     /** @var TableMigration $otherTable */
-                    $otherTable = $otherTables[$on];
+                    $otherTable = @$otherTables[$on];
                     $call->on = $otherTable->getName();
 
                     $otherCall = clone $call;
@@ -701,58 +808,81 @@ class TableMigration implements Countable
 
     /**
      * Saves the table in the given migration file.
-     * @param string $file
      * @return bool
      */
-    public function save($file)
+    public function save()
     {
-        $name = $this->getName();
-        $fieldObjects = $this->getFields();
-        $replace = ($search = "\$table->increments('id');\n") . "\t\t\t";
+        $file = $this->createMigrationFile();
 
-        if (@$fieldObjects['id']) {
-            // remove the custom call for the id, because it is laravel default.
-            unset($fieldObjects['id']);
-        } // if
-        else {
-            // or remove the default call, if the field is missing.
-            $replace = '';
-        } // else
+        if (!$written = !$file) {
+            $written = $this->addCallsToMigrationFile($file);
+        }
 
-        // remove default timestamps
-        if ($withDates = (@$fieldObjects['created_at'] && @$fieldObjects['updated_at'])) {
-            unset($fieldObjects['created_at'], $fieldObjects['updated_at']);
-        } // if
-
-        if ($fieldObjects) {
-            $replace .= implode("\n\t\t\t", $fieldObjects) . "\n";
-        } // if
-
-        // filter every "foreign call" (for m:n tables) to itself.
-        $calls = array_filter($this->getGenericCalls(), function ($call) use ($name) {
-
-            return !$call->foreign || $call->on !== $name;
-        });
-
-        if ($calls) {
-            $replace .= "\t\t\t" . implode("\n\t\t\t", $calls);
-        } // if
-
-        $fileContent = str_replace($search, $replace . "\n", file_get_contents($file));
-
-        if (!$withDates || $this->withoutTimestamps()) {
-            // remove the default call if the dates are missing.
-            $fileContent = str_replace("\n\t\t\t\$table->timestamps();\n", '', $fileContent);
-        } // if
-
-        $written = (bool)file_put_contents($file, $fileContent);
-
-        if ($written) {
-            // Success of formatting is optional.
-            @exec("vendor/bin/phpcbf {$file} --standard=PSR2", $output, $return);
-        } // if
+        if ($this->needsLaravelModel()) {
+            $this->saveModelForTable();
+        }
 
         return $written;
+    } // function
+
+    /**
+     * Saves the model content for a table.
+     * @return MakeMWBModel
+     */
+    protected function saveModelForTable()
+    {
+        $table = $this;
+        $dates = [];
+        $fields = $table->getFields();
+        // TODO Work with the namespace again. The FQN does not work since switching to the generator.s
+        $modelContent = (new ModelContent($table->getModelName()))->setTable($table->getName());
+
+        if (array_key_exists($field = 'deleted_at', $fields)) {
+            unset($fields[$field]);
+
+            $dates[] = $field;
+            $modelContent->setTraits(['\Illuminate\Database\Eloquent\SoftDeletes']);
+        } // if
+
+        if (array_key_exists($field = 'created_at', $fields)) {
+            unset($fields[$field]);
+
+            $dates[] = $field;
+        } // if
+
+        if (array_key_exists($field = 'updated_at', $fields)) {
+            unset($fields[$field]);
+
+            $dates[] = $field;
+        } // if
+
+        if ($dates) {
+            $modelContent->setDates($dates);
+        } // if
+
+        unset($fields['id']);
+        $modelContent->setFillable(array_diff(array_keys($fields), $table->getBlacklist()));
+        $modelContent->setCasts($table->getCastedFields());
+
+        if ($genericCalls = $table->getGenericCalls()) {
+            foreach ($genericCalls as $call) {
+                if ($call instanceof ForeignKey) {
+                    $modelContent->addForeignKey($call);
+                } // if
+            } // foreach
+        } // if
+
+        if ($sources = $table->getRelationSources()) {
+            foreach ($sources as $call) {
+                if ($call instanceof ForeignKey) {
+                    $modelContent->addForeignKey($call);
+                } // if
+            } // foreach
+        } // if
+
+        $modelContent->save();
+
+        return $this;
     } // function
 
     /**
@@ -766,6 +896,30 @@ class TableMigration implements Countable
 
         return $this;
     } // function
+
+    /**
+     * Sets the casted fields for this table.
+     * @param array $castedFields
+     * @return TableMigration
+     */
+    public function setCastedFields(array $castedFields)
+    {
+        $this->castedFields = $castedFields;
+
+        return $this;
+    } // function
+
+    /**
+     * Sets the issueing command.
+     * @param Command|void $command
+     * @return TableMigration
+     */
+    public function setCommand($command)
+    {
+        $this->command = $command;
+
+        return $this;
+    }
 
     /**
      * Sets the generic calls, the ambigiuous calls for fields.
