@@ -1,6 +1,10 @@
 <?php namespace b3nl\MWBModel\Models;
 
 use b3nl\MWBModel\Models\Migration\Base;
+use DOMNode;
+use DOMNodeList;
+use DOMXPath;
+use Illuminate\Database\Migrations\Migration;
 
 /**
  * Class to prepare the database fields for the laravel migrations.
@@ -10,6 +14,12 @@ use b3nl\MWBModel\Models\Migration\Base;
  */
 class MigrationField extends Base
 {
+    /**
+     * The possible options for this field.
+     * @var array
+     */
+    protected $additionalOptions = [];
+
     /**
      * The id of the field in the model.
      * @var string
@@ -40,6 +50,12 @@ class MigrationField extends Base
     ];
 
     /**
+     * The settings of this field.
+     * @var array
+     */
+    protected $settings = [];
+
+    /**
      * XPath evals for the main type of the desired database field in the migration.
      *
      * Key is the laravel call, the first array value is the xpath to check, if the call is needed and the second
@@ -47,31 +63,34 @@ class MigrationField extends Base
      * @var array
      */
     protected $typeEvals = [
+        'boolean' => [
+            './link[@key="userType" and text() = "com.mysql.rdbms.mysql.userdatatype.boolean"]'
+        ],
         'bigInteger' => [
             './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.bigint"]',
             [
                 'boolean(./value[@type="int" and @key="autoIncrement" and number() = 1])',
                 'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" ' .
-                    'and text() = "UNSIGNED"])'
+                'and text() = "UNSIGNED"])'
             ]
         ],
-        'softDeletes' => [
-            './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.datetime" or text() = "com.mysql.rdbms.mysql.datatype.timestamp_f"]/../value[@key="name" ' .
-                'and text() = "deleted_at"]'
-        ],
         'dateTime' => [
-            './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.datetime"]'
+            './link[@key="simpleType" and (text() = "com.mysql.rdbms.mysql.datatype.datetime" or ' .
+                'text() = "com.mysql.rdbms.mysql.datatype.datetime_f")]'
+        ],
+        'enum' => [
+            './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.enum"]'
         ],
         'increments' => [
             './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.int"] and ./value[@key="name" ' .
-                'and text() = "id"] and ./value[@type="int" and @key="autoIncrement" and number() = 1]'
+            'and text() = "id"] and ./value[@type="int" and @key="autoIncrement" and number() = 1]'
         ],
         'integer' => [
             './link[@key="simpleType" and text() = "com.mysql.rdbms.mysql.datatype.int"]',
             [
                 'boolean(./value[@type="int" and @key="autoIncrement" and number() = 1])',
                 'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" ' .
-                    'and text() = "UNSIGNED"])'
+                'and text() = "UNSIGNED"])'
             ]
         ],
         'mediumInteger' => [
@@ -79,7 +98,7 @@ class MigrationField extends Base
             [
                 'boolean(./value[@type="int" and @key="autoIncrement" and number() = 1])',
                 'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" ' .
-                    'and text() = "UNSIGNED"])'
+                'and text() = "UNSIGNED"])'
             ]
         ],
         'text' => [
@@ -93,7 +112,7 @@ class MigrationField extends Base
             [
                 'boolean(./value[@type="int" and @key="autoIncrement" and text() = 1])',
                 'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" ' .
-                    'and text() = "UNSIGNED"])'
+                'and text() = "UNSIGNED"])'
             ]
         ],
         'rememberToken' => [
@@ -105,7 +124,7 @@ class MigrationField extends Base
             [
                 'boolean(./value[@type="int" and @key="autoIncrement" and text() = 1])',
                 'boolean(./value[@content-type="string" and @key="flags"]/value[@type="string" ' .
-                    'and text() = "UNSIGNED"])'
+                'and text() = "UNSIGNED"])'
             ]
         ],
         'string' => [
@@ -122,6 +141,62 @@ class MigrationField extends Base
     {
         $this->setName($name);
     } // function
+
+    /**
+     * Returns the method call, to be saved in the migration file.
+     * @return string
+     */
+    public function __toString()
+    {
+        $schema = $this->getName() . ':';
+
+        foreach ($this->getSettings() as $type => $values) {
+            $schema .= $type;
+
+            if ($values) {
+                $schema .= '(' .
+                    implode(',', array_map(function($value) { return var_export($value, true); }, $values)) .
+                    ')';
+            }
+        }
+
+        if ($options = $this->getAdditionalOptions()) {
+            $schema .= ':';
+
+            foreach ($options as $name => $values) {
+                $schema .= $name;
+
+                if ($values) {
+                    $schema .= '(' .
+                        implode(',', array_map(function($value) { return var_export($value, true); }, $values)) .
+                        ')';
+                }
+            }
+        }
+
+        return $schema;
+    }
+
+    /**
+     * @param $name
+     * @param array $values
+     * @return $this
+     */
+    public function addAdditionalOption($name, array $values = [])
+    {
+        $this->additionalOptions[$name] = $values;
+
+        return $this;
+    }
+
+    /**
+     * Returns the options for this field.
+     * @return array
+     */
+    public function getAdditionalOptions()
+    {
+        return $this->additionalOptions;
+    }
 
     /**
      * Returns the id of this field in the model.
@@ -142,12 +217,21 @@ class MigrationField extends Base
     }
 
     /**
+     * Returns the settings of this field.
+     * @return array
+     */
+    public function getSettings()
+    {
+        return $this->settings;
+    }
+
+    /**
      * Loads the database migrations calls of the database field..
      * @param \DOMNode $field
      * @param \DOMXPath $rootPath
      * @return MigrationField
      */
-    public function load(\DOMNode $field, \DOMXPath $rootPath)
+    public function load(DOMNode $field, DOMXPath $rootPath)
     {
         $this->setId($field->attributes->getNamedItem('id')->nodeValue);
 
@@ -165,24 +249,20 @@ class MigrationField extends Base
      * @return MigrationField
      */
     protected function loadMigrationCalls(
-        \DOMNode $field,
-        \DOMXPath $rootPath,
+        DOMNode $field,
+        DOMXPath $rootPath,
         array $migrationRules,
         $isOptional = false
     ) {
         $method = '';
         $params = [];
 
-        if (!$isOptional) {
-            $params[] = $this->name;
-        } // if
-
         foreach ($migrationRules as $ruleMethod => $rules) {
             $evaledXPath = $rootPath->evaluate($rules[0], $field);
 
             // is it a found domnodelist or evaled the xpath to a scalar value !== false.
-            if ((($evaledXPath instanceof \DOMNodeList) && ($evaledXPath->length)) ||
-                ((!($evaledXPath instanceof \DOMNodeList)) && $evaledXPath)
+            if ((($evaledXPath instanceof DOMNodeList) && ($evaledXPath->length)) ||
+                ((!($evaledXPath instanceof DOMNodeList)) && $evaledXPath)
             ) {
                 $method = $ruleMethod;
                 break;
@@ -202,16 +282,29 @@ class MigrationField extends Base
                     $isResultNodeList = $paramResult instanceof \DOMNodeList;
 
                     if ((($isResultNodeList) && ($paramResult->length)) || (!$isResultNodeList)) {
-                        $params[] = $isResultNodeList ? $paramResult->item(0)->nodeValue : $paramResult;
+                        $rawParam = $isResultNodeList ? $paramResult->item(0)->nodeValue : $paramResult;
+                        $params[] =  is_numeric($rawParam) ? $rawParam * 1 : $rawParam;
                     } // if
                 } // foreach
             } // if
 
-            call_user_func_array([$this, $method], $params);
+            $this->{'set' . ($isOptional ? 'AdditionalOptions' : 'Settings')}(array($method => $params));
         } // if
 
         return $this;
-    } // function
+    }
+
+    /**
+     * Sets the options array.
+     * @param array $options
+     * @return MigrationField
+     */
+    public function setAdditionalOptions($options)
+    {
+        $this->options = $options;
+
+        return $this;
+    }
 
     /**
      * Sets the id of this field.
@@ -223,7 +316,7 @@ class MigrationField extends Base
         $this->id = $id;
 
         return $this;
-    } // function
+    }
 
     /**
      * Sets the fieldname.
@@ -235,5 +328,17 @@ class MigrationField extends Base
         $this->name = $name;
 
         return $this;
-    } // function
+    }
+
+    /**
+     * Sets the settings of this field.
+     * @param array $settings
+     * @return MigrationField
+     */
+    public function setSettings($settings)
+    {
+        $this->settings = $settings;
+
+        return $this;
+    }
 }

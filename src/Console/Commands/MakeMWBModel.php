@@ -48,9 +48,9 @@ class MakeMWBModel extends BaseCommand
 
     /**
      * Saving of the table names and their ids.
-     * @var array
+     * @var TableMigration[]|void
      */
-    protected $tables = [];
+    protected $tables = null;
 
     /**
      * Checks and extract the model file. If the file can be found and extracted,the extracted path will be returned.
@@ -78,35 +78,11 @@ class MakeMWBModel extends BaseCommand
     } // function
 
     /**
-     * Creates the migration file for the given table.
-     * @param TableMigration $table
-     * @return mixed|string
-     */
-    protected function createMigrationFile(TableMigration $table)
-    {
-        if ($table->needsLaravelModel()) {
-            $this->call('make:model', ['name' => $table->getModelName(), '--migration' => true]);
-        } // if
-        else {
-            $this->call(
-                'make:migration',
-                ['name' => "create_{$table->getName()}_table", '--create' => $table->getName()]
-            );
-        } // else
-
-        $migrationFiles = glob(
-            $this->getMigrationPath() . DIRECTORY_SEPARATOR . "*_create_{$table->getName()}_table.php"
-        );
-
-        return $migrationFiles ? end($migrationFiles) : '';
-    } // function
-
-    /**
      * Creates the relations between the tables.
      * @param TableMigration[] $tables
      * @return TableMigration[]
      */
-    protected function createTableRelations($tables)
+    protected function createTableRelations(array $tables)
     {
         /** @var TableMigration $tableObject */
         foreach ($tables as $tableObject) {
@@ -158,6 +134,19 @@ class MakeMWBModel extends BaseCommand
     } // function
 
     /**
+     * Returns the loaded model tables.
+     * @return TableMigration[]
+     */
+    public function getModelTables()
+    {
+        if ($this->tables === null) {
+            $this->setModelTables($this->loadModelTables());
+        }
+
+        return $this->tables;
+    }
+
+    /**
      * Get the console command options.
      * @return array
      */
@@ -181,55 +170,23 @@ class MakeMWBModel extends BaseCommand
      */
     protected function handleModelTables()
     {
-        $reader = $this->getModelReader();
-        $tables = [];
-
-        if (!$reader->isCompatibleVersion()) {
+        if (!$this->getModelReader()->isCompatibleVersion()) {
             throw new \InvalidArgumentException('Wrong model version.');
         } // if
 
-        while ($reader->read()) {
-            if ($reader->isModelTable()) {
-                if ($table = $this->loadModelTable($reader->expand())) {
-                    $tables[$table->getId()] = $table;
-                } // if
-            } // if
-        } // while
+        $bar = $this->output->createProgressBar();
 
-        $tables = $this->createTableRelations($tables);
+        $bar->start(count($tables = $this->getModelTables()));
 
         /** @var TableMigration $tableObject */
-        foreach ($tables as $tableObject) {
-            if ($migrationFile = $this->createMigrationFile($tableObject)) {
-                $tableObject->save($migrationFile);
-            } // if
+        foreach ($this->createTableRelations($tables) as $tableObject) {
+            $tableObject->save($this);
 
-            if ($tableObject->needsLaravelModel()) {
-                $this->saveModelForTable($tableObject);
-            } // if
+            $bar->advance();
         } // foreach
 
         return $this;
-    } // function
-
-    /**
-     * Generates the model and migration for/with laravel and extends the contents of the generated classes.
-     * @param \DOMNode $node The node of the table.
-     * @return MakeMWBModel|bool False if the table should be ignored.
-     */
-    protected function loadModelTable(\DOMNode $node)
-    {
-        $tableObject = new TableMigration();
-        $loaded = $tableObject->load($node);
-
-        if ($loaded && in_array($tableObject->getName(), $this->pivotTables)) {
-            $tableObject->isPivotTable(true);
-        } else if ($tableObject->isPivotTable()) {
-            $this->pivotTables[] = $tableObject->getName();
-        } // else if
-
-        return $loaded ? $tableObject : false;
-    } // function
+    }
 
     /**
      * Loads the names of the m:n tables.
@@ -242,68 +199,46 @@ class MakeMWBModel extends BaseCommand
         } // if
 
         return $this;
-    } // function
+    }
 
     /**
-     * Saves the model content for a table.
-     * @param TableMigration $table
-     * @return MakeMWBModel
+     * Generates the model and migration for/with laravel and extends the contents of the generated classes.
+     * @param \DOMNode $node The node of the table.
+     * @return MakeMWBModel|bool False if the table should be ignored.
      */
-    protected function saveModelForTable(TableMigration $table)
+    protected function loadModelTable(\DOMNode $node)
     {
-        $dates = [];
-        $fields = $table->getFields();
-        $modelContent =
-            (new ModelContent('\\' . $this->getAppNamespace() . $table->getModelName()))
-                ->setTable($table->getName());
+        $tableObject = new TableMigration($this);
+        $loaded = $tableObject->load($node);
 
-        if (array_key_exists($field = 'deleted_at', $fields)) {
-            unset($fields[$field]);
+        if ($loaded && in_array($tableObject->getName(), $this->pivotTables)) {
+            $tableObject->isPivotTable(true);
+        } else if ($tableObject->isPivotTable()) {
+            $this->pivotTables[] = $tableObject->getName();
+        } // else if
 
-            $dates[] = $field;
-            $modelContent->setTraits(['\Illuminate\Database\Eloquent\SoftDeletes']);
-        } // if
+        return $loaded ? $tableObject : false;
+    }
 
-        if (array_key_exists($field = 'created_at', $fields)) {
-            unset($fields[$field]);
+    /**
+     * Loads the model tables from the file.
+     * @return TableMigration[]
+     */
+    protected function loadModelTables()
+    {
+        $reader = $this->getModelReader();
+        $tables = [];
 
-            $dates[] = $field;
-        } // if
-
-        if (array_key_exists($field = 'updated_at', $fields)) {
-            unset($fields[$field]);
-
-            $dates[] = $field;
-        } // if
-
-        if ($dates) {
-            $modelContent->setDates($dates);
-        } // if
-
-        unset($fields['id']);
-        $modelContent->setFillable(array_diff(array_keys($fields), $table->getBlacklist()));
-        $modelContent->setCasts($table->getCastedFields());
-
-        if ($genericCalls = $table->getGenericCalls()) {
-            foreach ($genericCalls as $call) {
-                if ($call instanceof ForeignKey) {
-                    $modelContent->addForeignKey($call);
+        while ($reader->read()) {
+            if ($reader->isModelTable()) {
+                if ($table = $this->loadModelTable($reader->expand())) {
+                    $tables[$table->getId()] = $table;
                 } // if
-            } // foreach
-        } // if
+            } // if
+        } // while
 
-        if ($sources = $table->getRelationSources()) {
-            foreach ($sources as $call) {
-                if ($call instanceof ForeignKey) {
-                    $modelContent->addForeignKey($call);
-                } // if
-            } // foreach
-        } // if
-
-        $modelContent->save();
-
-        return $this;
-    } // function
+        return $tables;
+    }
 
     /**
      * Sets the model reader.
@@ -315,7 +250,19 @@ class MakeMWBModel extends BaseCommand
         $this->modelReader = $modelReader;
 
         return $this;
-    } // function
+    }
+
+    /**
+     * Sets the model tables.
+     * @param TableMigration[] $tables
+     * @return $this
+     */
+    public function setModelTables(array $tables)
+    {
+        $this->tables = $tables;
+
+        return $this;
+    }
 
     /**
      * Callback to sort tables with foreign keys to the end.
