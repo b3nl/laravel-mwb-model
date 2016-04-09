@@ -5,7 +5,7 @@ With this project you can kickstart your models and database migrations for your
 * Just add this project to your composer setup: **"b3nl/laravel-mwb-model": "dev-master"**
 * Add our service provider to the list of your service providers in config/app.php: **b3nl\MWBModel\ServiceProvider::class**
  
-Now you have access to an artisan command for parsing you MySQL-Workbench-File:
+Now you have access to an artisan command for parsing your MySQL-Workbench-File:
 
 ```
 php artisan make:mwb-model $FILE_TO_SAVED_MODEL --pivots=$COMMA_SEPARATED_LIST_OF_YOUR_PIVOT_TABLE_NAMES
