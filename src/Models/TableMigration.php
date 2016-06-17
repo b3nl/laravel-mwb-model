@@ -517,7 +517,7 @@ class TableMigration implements Countable
 
             $modelNames = [];
             foreach (explode('_', $tableName) as $word) {
-                $modelNames[] = Inflector::singularize($word);
+                $modelNames[] = ucfirst(Inflector::singularize($word));
             } //foreach
             $modelName = implode('', $modelNames);
 
